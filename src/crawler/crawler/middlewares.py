@@ -29,6 +29,10 @@ def request_host(url: str) -> str:
 
 
 def build_redis_client(redis_url: str):
+    if not redis_url:
+        raise NotConfigured(
+            "REDIS_URL is required, format: redis://<username>:<url-encoded-password>@<host>:<port>/<db>"
+        )
     try:
         import redis
     except ImportError as exc:
@@ -51,7 +55,7 @@ class LocalIpRotationMiddleware:
         if not ips:
             raise NotConfigured(f"no local IPs discovered on interface {interface}")
 
-        redis_client = build_redis_client(settings.get("REDIS_URL", "redis://localhost:6379/0"))
+        redis_client = build_redis_client(settings.get("REDIS_URL"))
         health_store = RedisHealthStore(
             redis_client=redis_client,
             failure_threshold=settings.getint("IP_FAILURE_THRESHOLD", 5),
@@ -83,7 +87,7 @@ class IpHealthCheckMiddleware:
 
     @classmethod
     def from_crawler(cls, crawler):
-        redis_client = build_redis_client(crawler.settings.get("REDIS_URL", "redis://localhost:6379/0"))
+        redis_client = build_redis_client(crawler.settings.get("REDIS_URL"))
         health_store = RedisHealthStore(
             redis_client=redis_client,
             failure_threshold=crawler.settings.getint("IP_FAILURE_THRESHOLD", 5),
@@ -140,4 +144,3 @@ class IpHealthCheckMiddleware:
             return str(value).lower()
         except Exception:
             return ""
-

@@ -21,7 +21,7 @@
 - `IP_COOLDOWN_SECONDS`：默认 `1800`。
 - `CONCURRENT_REQUESTS`：P0 起步值暂定 `32`，后续逐步调优。
 - `CONCURRENT_REQUESTS_PER_DOMAIN`：P0 起步值暂定 `2`，后续逐步调优。
-- `REDIS_URL`：Redis 连接串。
+- `REDIS_URL`：Redis 认证连接串，真实环境必须包含用户名和密码。
 
 ## 本地准备
 
@@ -55,7 +55,7 @@ set +a
 
 | 变量 | 说明 | 示例 |
 |------|------|------|
-| `REDIS_URL` | Redis 连接串 | `redis://localhost:6379/0` |
+| `REDIS_URL` | Redis 认证连接串，密码必须 URL encode | `redis://crawler:CHANGE_ME_URL_ENCODED@redis-host:6379/0` |
 | `CRAWL_INTERFACE` | 扫描辅助 IP 的网卡 | `ens3` |
 | `EXCLUDED_LOCAL_IPS` | 管理 IP 排除列表，多个用逗号分隔 | `10.0.12.196,10.0.12.197` |
 | `IP_SELECTION_STRATEGY` | IP 选择策略 | `STICKY_BY_HOST` |
@@ -64,6 +64,30 @@ set +a
 | `PROMETHEUS_PORT` | 指标端口 | `9410` |
 
 ## P0 验证 Runbook
+
+### Redis 认证连接串格式
+
+真实环境必须使用 Redis 用户名和密码认证，`REDIS_URL` 格式为：
+
+```bash
+REDIS_URL='redis://<username>:<url-encoded-password>@<host>:<port>/<db>'
+```
+
+示例：
+
+```bash
+REDIS_URL='redis://crawler:CHANGE_ME_URL_ENCODED@redis-host:6379/0'
+```
+
+如果密码包含 `@`、`:`、`/`、`#`、`%`、`&`、`!` 等特殊字符，必须先做 URL encode。只有密码、没有用户名的 Redis 旧式认证格式不作为本项目默认配置。
+
+仓库提供了密码编码工具，输入时不会回显原始密码：
+
+```bash
+deploy/scripts/encode-redis-password.py
+```
+
+将输出结果填入 `REDIS_URL` 的密码位置。整条 `REDIS_URL` 建议使用单引号包裹，避免 shell 对特殊字符做解释。
 
 ### Step 0：确认节点网络
 
@@ -274,7 +298,7 @@ deploy/scripts/run-p0-soak.sh /tmp/egress-seeds.txt
 准备 seed 文件。示例文件位于 `deploy/examples/egress-seeds.example.txt`，正式运行前需要替换为团队批准的 echo endpoint 或受控目标。
 
 ```bash
-export REDIS_URL="redis://localhost:6379/0"
+export REDIS_URL='redis://crawler:CHANGE_ME_URL_ENCODED@redis-host:6379/0'
 export CRAWL_INTERFACE="ens3"
 export EXCLUDED_LOCAL_IPS="10.0.12.196"
 export IP_SELECTION_STRATEGY="STICKY_BY_HOST"
@@ -294,7 +318,7 @@ deploy/scripts/run-egress-validation.sh deploy/examples/egress-seeds.example.txt
 ## Redis 健康状态检查
 
 ```bash
-export REDIS_URL="redis://localhost:6379/0"
+export REDIS_URL='redis://crawler:CHANGE_ME_URL_ENCODED@redis-host:6379/0'
 deploy/scripts/inspect-ip-health.sh
 ```
 

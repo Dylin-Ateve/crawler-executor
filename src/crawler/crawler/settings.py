@@ -28,7 +28,7 @@ IP_FAILURE_THRESHOLD = _int_env("IP_FAILURE_THRESHOLD", 5)
 IP_FAILURE_WINDOW_SECONDS = _int_env("IP_FAILURE_WINDOW_SECONDS", 300)
 IP_COOLDOWN_SECONDS = _int_env("IP_COOLDOWN_SECONDS", 1800)
 
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+REDIS_URL = os.getenv("REDIS_URL", "")
 REDIS_KEY_PREFIX = os.getenv("REDIS_KEY_PREFIX", "crawler")
 
 CONCURRENT_REQUESTS = _int_env("CONCURRENT_REQUESTS", 64)
@@ -51,4 +51,3 @@ DOWNLOADER_MIDDLEWARES = {
 EXTENSIONS = {
     "crawler.metrics.PrometheusMetricsExtension": 500,
 }
-
