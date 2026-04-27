@@ -1,31 +1,31 @@
-# Project Constitution: Scrapy Distributed Crawler
+# 项目章程：Scrapy 分布式爬虫
 
-## Core Principles
+## 核心原则
 
-### I. Specification First
+### I. 规格先行
 
-Every implementation decision must trace back to a documented requirement, assumption, or clarification in `specs/`.
+所有实现决策都必须能追溯到 `specs/` 下已记录的需求、假设或澄清结论。
 
-### II. Operational Safety
+### II. 运维安全优先
 
-The crawler must include explicit rate limits, host-level controls, retry bounds, blacklisting, and observability before scale-out.
+爬虫在扩容前必须具备明确的限速策略、Host 级控制、重试边界、黑名单机制和可观测性。
 
-### III. Data Durability
+### III. 数据可靠性
 
-HTML persistence, metadata delivery, and downstream parse task publication must define failure behavior and replay semantics before implementation.
+HTML 持久化、元数据投递和下游解析任务发布必须在实现前定义失败行为、重放语义和幂等边界。
 
-### IV. Incremental Delivery
+### IV. 增量交付
 
-The system must be delivered in independently verifiable phases: single-node PoC, distributed crawl path, storage path, analytics path, and automated deployment.
+系统必须按可独立验证的阶段交付：单节点 PoC、分布式抓取链路、存储链路、分析链路和自动化部署。
 
-### V. Measurable Acceptance
+### V. 可度量验收
 
-Performance, cost, reliability, and operational goals must be expressed as measurable criteria with validation steps.
+性能、成本、可靠性和运维目标必须以可度量标准表达，并配套明确的验证步骤。
 
-## Governance
+## 治理规则
 
-- Requirements marked `NEEDS CLARIFICATION` block detailed planning.
-- Technical plans must document simpler alternatives considered and rejected.
-- Tasks must include exact file paths once implementation begins.
-- Production scale-out must not proceed until the PoC acceptance criteria are met.
-
+- 标记为 `NEEDS CLARIFICATION` 的需求会阻塞详细计划。
+- 技术计划必须记录已考虑但未采纳的更简单替代方案。
+- 进入实现阶段后，任务必须包含明确的文件路径。
+- PoC 验收标准达成前，不进入生产规模扩容。
+- 仓库沟通与维护说明默认使用中文；涉及外部合作或多语言文档时再单独标注。

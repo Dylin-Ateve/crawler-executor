@@ -1,0 +1,5 @@
+# P0 出口验证示例 URL。
+# 实际执行前请替换为团队批准的 echo endpoint 或受控目标。
+https://api.ipify.org?format=json
+https://httpbin.org/ip
+

@@ -1,56 +1,58 @@
-# Tasks: P0 Scrapy Distributed Crawler PoC
+# 任务：P0 Scrapy 分布式爬虫 PoC
 
-**Input**: `spec.md`, `plan.md`, original `scrapy-distributed-crawler-feature.md`  
-**Scope**: P0 single-node PoC only
+**输入**：`spec.md`、`plan.md`、原始 `scrapy-distributed-crawler-feature.md`
+**范围**：仅覆盖 P0 单节点 PoC
 
-## Phase 1: P0 Setup
+## 阶段 1：P0 初始化
 
-- [ ] T001 Create Python/Scrapy project skeleton under `src/crawler/`.
-- [ ] T002 Add dependency definition for Scrapy, redis client, Prometheus client, IP discovery library, and pytest.
-- [ ] T003 Create configuration module for `CRAWL_INTERFACE`, `EXCLUDED_LOCAL_IPS`, IP strategy, Redis URL, cooldown thresholds, and Scrapy concurrency.
-- [ ] T004 Create local run documentation in `specs/001-scrapy-distributed-crawler/quickstart.md`.
+- [x] T001 在 `src/crawler/` 下创建 Python/Scrapy 项目骨架。
+- [x] T002 增加 Scrapy、Redis client、Prometheus client、IP 发现库和 pytest 的依赖定义。
+- [x] T003 创建配置模块，覆盖 `CRAWL_INTERFACE`、`EXCLUDED_LOCAL_IPS`、IP 策略、Redis URL、冷却阈值和 Scrapy 并发配置。
+- [x] T004 在 `specs/001-scrapy-distributed-crawler/quickstart.md` 中补充本地运行说明。
 
-## Phase 2: Foundational IP + Redis Behavior
+## 阶段 2：IP 与 Redis 基础行为
 
-- [ ] T005 [P] Implement local IPv4 discovery in `src/crawler/crawler/ip_pool.py`.
-- [ ] T006 [P] Add unit tests for IP discovery filtering in `tests/unit/test_ip_pool.py`.
-- [ ] T007 Implement host/IP selection logic in `src/crawler/crawler/ip_pool.py`.
-- [ ] T008 [P] Add unit tests for `STICKY_BY_HOST` and `ROUND_ROBIN` selection in `tests/unit/test_ip_pool.py`.
-- [ ] T009 Implement Redis blacklist and failure-counter helpers in `src/crawler/crawler/health.py`.
-- [ ] T010 [P] Add unit tests for blacklist key format and threshold behavior in `tests/unit/test_health.py`.
+- [x] T005 [P] 在 `src/crawler/crawler/ip_pool.py` 中实现本地 IPv4 发现。
+- [x] T006 [P] 在 `tests/unit/test_ip_pool.py` 中增加 IP 发现过滤逻辑单元测试。
+- [x] T007 在 `src/crawler/crawler/ip_pool.py` 中实现 Host/IP 选择逻辑。
+- [x] T008 [P] 在 `tests/unit/test_ip_pool.py` 中增加 `STICKY_BY_HOST` 和 `ROUND_ROBIN` 选择策略单元测试。
+- [x] T009 在 `src/crawler/crawler/health.py` 中实现 Redis 黑名单与失败计数辅助逻辑。
+- [x] T010 [P] 在 `tests/unit/test_health.py` 中增加黑名单 key 格式和阈值行为单元测试。
+- [x] T010a [P] 在 `src/crawler/crawler/contracts/canonical_url.py` 中独立抽象 canonical URL 契约。
+- [x] T010b [P] 在 `tests/unit/test_canonical_url.py` 中增加 canonical URL 契约单元测试。
 
-## Phase 3: Scrapy Middleware Slice
+## 阶段 3：Scrapy Middleware 切片
 
-- [ ] T011 Implement `LocalIpRotationMiddleware` in `src/crawler/crawler/middlewares.py`.
-- [ ] T012 Implement `IpHealthCheckMiddleware` in `src/crawler/crawler/middlewares.py`.
-- [ ] T013 Configure Scrapy downloader middleware order in `src/crawler/crawler/settings.py`.
-- [ ] T014 Add a minimal validation spider in `src/crawler/crawler/spiders/egress_validation.py`.
-- [ ] T015 Add integration smoke test for middleware metadata binding in `tests/integration/test_egress_middleware.py`.
+- [x] T011 在 `src/crawler/crawler/middlewares.py` 中实现 `LocalIpRotationMiddleware`。
+- [x] T012 在 `src/crawler/crawler/middlewares.py` 中实现 `IpHealthCheckMiddleware`。
+- [x] T013 在 `src/crawler/crawler/settings.py` 中配置 Scrapy downloader middleware 顺序。
+- [x] T014 在 `src/crawler/crawler/spiders/egress_validation.py` 中增加最小验证 spider。
+- [x] T015 在 `tests/integration/test_egress_middleware.py` 中增加 middleware metadata 绑定集成 smoke test。
 
-## Phase 4: Observability
+## 阶段 4：可观测性
 
-- [ ] T016 Implement Prometheus metrics in `src/crawler/crawler/metrics.py`.
-- [ ] T017 Expose request totals, status totals, response duration, active IP count, and blacklist count.
-- [ ] T018 Add run-log output for observed echo endpoint IPs.
+- [x] T016 在 `src/crawler/crawler/metrics.py` 中实现 Prometheus 指标。
+- [x] T017 暴露请求总数、状态码总数、响应耗时、活跃 IP 数和黑名单数量。
+- [x] T018 增加运行日志，输出 echo endpoint 观测到的出口 IP。
 
-## Phase 5: P0 Validation Scripts
+## 阶段 5：P0 验证脚本
 
-- [ ] T019 Create a script to run echo-endpoint validation in `deploy/scripts/run-egress-validation.sh`.
-- [ ] T020 Create a script to inspect Redis blacklist keys in `deploy/scripts/inspect-ip-health.sh`.
-- [ ] T021 Create a 24-hour PoC run command in `deploy/scripts/run-p0-soak.sh`.
-- [ ] T022 Document the expected PoC evidence and result table in `specs/001-scrapy-distributed-crawler/quickstart.md`.
+- [x] T019 在 `deploy/scripts/run-egress-validation.sh` 中创建 echo endpoint 验证脚本。
+- [x] T020 在 `deploy/scripts/inspect-ip-health.sh` 中创建 Redis 黑名单 key 检查脚本。
+- [x] T021 在 `deploy/scripts/run-p0-soak.sh` 中创建 24 小时 PoC 运行命令。
+- [x] T022 在 `specs/001-scrapy-distributed-crawler/quickstart.md` 中记录预期 PoC 证据和结果表。
 
-## Phase 6: P0 Exit Review
+## 阶段 6：P0 退出评审
 
-- [ ] T023 Collect observed EIP distribution from the validation run.
-- [ ] T024 Collect 24-hour throughput, CPU, memory, error-rate, and blacklist-rate results.
-- [ ] T025 Compare P0 results with the current Heritrix baseline.
-- [ ] T026 Decide whether to proceed to P1 storage and Kafka implementation.
+- [ ] T023 收集验证运行中观测到的 EIP 分布。
+- [ ] T024 收集 24 小时吞吐、CPU、内存、错误率和黑名单比例结果。
+- [ ] T025 将 P0 结果与当前 Heritrix 基线对比。
+- [ ] T026 决定是否进入 P1 存储与 Kafka 实现。
 
-## Dependencies & Execution Order
+## 依赖与执行顺序
 
-- Phase 1 blocks all implementation work.
-- Phase 2 blocks Scrapy middleware behavior.
-- Phase 3 blocks live egress validation.
-- Phase 4 and Phase 5 can proceed after Phase 3.
-- Phase 6 is the P0 gate before P1 planning.
+- 阶段 1 阻塞所有实现工作。
+- 阶段 2 阻塞 Scrapy middleware 行为。
+- 阶段 3 阻塞真实出口验证。
+- 阶段 4 和阶段 5 可在阶段 3 完成后推进。
+- 阶段 6 是进入 P1 规划前的 P0 门禁。

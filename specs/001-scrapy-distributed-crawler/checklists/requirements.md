@@ -1,24 +1,23 @@
-# Requirements Quality Checklist: Scrapy Distributed Crawler
+# 需求质量检查表：Scrapy 分布式爬虫
 
-## Content Quality
+## 内容质量
 
-- [ ] No implementation details leak into functional requirements.
-- [ ] All user stories are independently testable.
-- [ ] All acceptance criteria are measurable.
-- [ ] All `NEEDS CLARIFICATION` items are resolved or explicitly deferred.
+- [ ] 功能需求中没有混入不必要的实现细节。
+- [ ] 所有用户故事都可以独立测试。
+- [ ] 所有验收标准都可度量。
+- [x] 所有 `NEEDS CLARIFICATION` 项都已解决或明确延期。
 
-## Completeness
+## 完整性
 
-- [ ] Crawl scope and compliance boundaries are defined.
-- [ ] URL dedupe and canonicalization rules are defined.
-- [ ] Storage durability and replay semantics are defined.
-- [ ] Kafka message contracts are defined.
-- [ ] Operational metrics and alerts are defined.
-- [ ] Performance targets are confirmed as hard requirements or estimates.
+- [ ] 抓取范围和合规边界已定义。
+- [x] URL 去重和 canonicalization 规则已定义。
+- [ ] 存储可靠性和重放语义已定义。
+- [ ] Kafka 消息契约已定义。
+- [ ] 运维指标和告警已定义。
+- [ ] 性能目标已确认为硬性要求或估算值。
 
-## Readiness
+## 就绪度
 
-- [ ] PoC validation steps are executable.
-- [ ] Production rollout gates are explicit.
-- [ ] Risks have owners and mitigations.
-
+- [ ] PoC 验证步骤可执行。
+- [ ] 生产发布门禁明确。
+- [ ] 风险有负责人和缓解措施。

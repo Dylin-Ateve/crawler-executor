@@ -1,54 +1,53 @@
-# Feature Specification: [FEATURE NAME]
+# 功能规格：[功能名称]
 
-**Feature Branch**: `[###-feature-name]`  
-**Created**: [DATE]  
-**Status**: Draft  
-**Input**: [Source requirement or prompt]
+**功能分支**：`[###-feature-name]`
+**创建日期**：[DATE]
+**状态**：草稿
+**输入来源**：[原始需求或提示]
 
-## User Scenarios & Testing
+## 用户场景与测试
 
-### User Story 1 - [Brief Title] (Priority: P1)
+### 用户故事 1 - [简短标题]（优先级：P1）
 
-[Describe this user journey in plain language.]
+[用自然语言描述该用户旅程。]
 
-**Why this priority**: [Value and reason for priority]
+**优先级理由**：[说明价值和优先级原因]
 
-**Independent Test**: [How this can be tested independently]
+**独立测试**：[说明如何独立验证]
 
-**Acceptance Scenarios**:
+**验收场景**：
 
-1. **Given** [initial state], **When** [action], **Then** [expected outcome]
+1. **假设** [初始状态]，**当** [触发动作]，**则** [预期结果]
 
-## Edge Cases
+## 边界场景
 
-- [Boundary condition]
-- [Failure scenario]
+- [边界条件]
+- [失败场景]
 
-## Requirements
+## 需求
 
-### Functional Requirements
+### 功能需求
 
-- **FR-001**: System MUST [specific capability].
-- **FR-002**: System MUST [specific capability].
-- **FR-XXX**: System MUST [NEEDS CLARIFICATION: specific unclear point].
+- **FR-001**：系统必须 [具体能力]。
+- **FR-002**：系统必须 [具体能力]。
+- **FR-XXX**：系统必须 [NEEDS CLARIFICATION: 具体未明确点]。
 
-### Non-Functional Requirements
+### 非功能需求
 
-- **NFR-001**: System MUST [performance/reliability/security/operability requirement].
+- **NFR-001**：系统必须 [性能/可靠性/安全/可运维要求]。
 
-### Key Entities
+### 关键实体
 
-- **[Entity]**: [Meaning, key attributes, relationships].
+- **[实体]**：[含义、关键属性、关系]。
 
-## Success Criteria
+## 成功标准
 
-- **SC-001**: [Measurable outcome].
+- **SC-001**：[可度量结果]。
 
-## Assumptions
+## 假设
 
-- [Assumption].
+- [假设]。
 
-## Clarifications
+## 澄清记录
 
-- [Date]: [Question and answer].
-
+- [日期]：[问题与答案]。

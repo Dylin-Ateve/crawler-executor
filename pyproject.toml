@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scrapy-distributed-crawler-p0"
+version = "0.1.0"
+description = "P0 PoC for Scrapy based multi-egress-IP crawler"
+requires-python = ">=3.9"
+dependencies = [
+    "Scrapy>=2.11",
+    "Twisted>=23.0",
+    "redis>=5.0",
+    "prometheus-client>=0.19",
+    "psutil>=5.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src/crawler"}
+
+[tool.setuptools.packages.find]
+where = ["src/crawler"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src/crawler"]
+testpaths = ["tests"]
+

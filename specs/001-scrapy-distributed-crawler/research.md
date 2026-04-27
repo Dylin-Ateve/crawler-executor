@@ -1,20 +1,25 @@
-# Research: Scrapy Distributed Crawler
+# 研究记录：Scrapy 分布式爬虫
 
-## Decisions To Research
+## 待研究决策
 
-- Scrapy `bindaddress` behavior under Kubernetes `hostNetwork`.
-- scrapy-redis queue customization for host bucketing and prioritization.
-- Redis data structures for blacklist, dedupe, and overflow strategy.
-- Kafka producer durability settings and local disk buffering.
-- PostgreSQL partitioning strategy and retention policy.
-- ClickHouse schema and materialized views for host profiles.
-- Cloud provider mechanics for auxiliary IPs and EIP binding.
+- Scrapy `bindaddress` 在 Kubernetes `hostNetwork` 下的行为。
+- scrapy-redis 针对 Host 分桶和优先级队列的定制方式。
+- Redis 黑名单、去重和溢出策略的数据结构。
+- Kafka producer 可靠性配置和本地磁盘缓冲策略。
+- PostgreSQL 分区策略和保留策略。
+- ClickHouse Host 画像 schema 和 materialized view 设计。
+- 云厂商辅助 IP 与 EIP 绑定机制。
+- Oracle Cloud Object Storage endpoint 和认证方式。
 
-## Decision Log
+## 决策记录
 
-| Topic | Decision | Rationale | Alternatives |
-|-------|----------|-----------|--------------|
-| P0 boundary | Single-node Scrapy egress-IP PoC only | This isolates the riskiest assumption before storage and orchestration work | Building full Kafka/PG/CH path first would hide network uncertainty behind more moving parts |
-| IP selection | Start with `STICKY_BY_HOST`; keep `ROUND_ROBIN` as diagnostic mode | Sticky host mapping reduces per-host egress churn while still distributing hosts across IPs | Pure random selection may look noisier to target hosts |
-| Blacklist state | Redis keys with TTL for host/IP cooldown | Matches the target architecture and makes recovery automatic | Local in-memory state cannot validate shared behavior |
-| Metrics | Prometheus endpoint in the crawler process | Low-friction operational visibility and reusable for later K8s phase | Parsing logs after the run is insufficient for live validation |
+| 主题 | 决策 | 理由 | 替代方案 |
+|------|------|------|----------|
+| P0 边界 | 仅做单节点 Scrapy 出口 IP PoC | 在进入存储和编排工作前，先隔离验证风险最高的网络假设 | 先构建完整 Kafka/PG/CH 链路会用更多变量掩盖网络不确定性 |
+| IP 选择 | 先实现 `STICKY_BY_HOST`，保留 `ROUND_ROBIN` 作为诊断模式 | Host 粘滞映射能降低单 Host 出口抖动，同时仍能在不同 Host 间分散 IP | 纯随机选择对目标站点表现更嘈杂 |
+| 黑名单状态 | Redis key + TTL 维护 Host/IP 冷却 | 匹配目标架构，并让恢复行为自动发生 | 本地内存状态无法验证共享行为 |
+| 指标 | 在爬虫进程内暴露 Prometheus endpoint | 成本低，后续 K8s 阶段可复用 | 仅在运行后解析日志不足以支持实时验证 |
+| Redis 降级 | Redis 短暂不可用时继续执行抓取任务，并使用本地内存 fallback | P0 以爬虫执行任务优先，避免 Redis 短故障直接停止 worker | Redis 不可用即停止 worker 会降低 PoC 连续运行可用性 |
+| P0 起步并发 | 暂定 `CONCURRENT_REQUESTS=32`、`CONCURRENT_REQUESTS_PER_DOMAIN=2` | 先从保守值开始，降低对目标站点压力，再按观测逐步调优 | 直接使用较高并发可能放大封禁和误判风险 |
+| robots.txt | P0 和生产方向均忽略 robots.txt | 用户确认该方向；同时必须保留 politeness 和批准目标范围 | 强制遵守 robots.txt 不符合当前项目目标 |
+| 对象存储 | Oracle Cloud Object Storage，bucket `clawer_content_staging` | 用户确认云存储方向，endpoint 后续补充 | S3/COS/OSS 暂不作为当前目标 |

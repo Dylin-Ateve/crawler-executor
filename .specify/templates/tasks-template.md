@@ -1,29 +1,28 @@
-# Tasks: [FEATURE NAME]
+# 任务：[功能名称]
 
-**Input**: Design documents from `/specs/[###-feature-name]/`  
-**Prerequisites**: `plan.md`, `spec.md`, `research.md`, `data-model.md`, `contracts/`
+**输入**：来自 `/specs/[###-feature-name]/` 的设计文档
+**前置条件**：`plan.md`、`spec.md`、`research.md`、`data-model.md`、`contracts/`
 
-## Format
+## 格式
 
-`[ID] [P?] [Story] Description`
+`[ID] [P?] [Story] 任务描述`
 
-- `[P]`: Can run in parallel.
-- `[Story]`: Maps task to a user story, such as `US1`.
-- Include exact file paths in every implementation task.
+- `[P]`：可并行执行。
+- `[Story]`：映射到用户故事，例如 `US1`。
+- 每个实现任务必须包含明确文件路径。
 
-## Phase 1: Setup
+## 阶段 1：初始化
 
-- [ ] T001 Create project structure per implementation plan.
+- [ ] T001 按实施计划创建项目结构。
 
-## Phase 2: Foundational
+## 阶段 2：基础能力
 
-- [ ] T002 Establish shared configuration, logging, metrics, and test foundations.
+- [ ] T002 建立共享配置、日志、指标和测试基础。
 
-## Phase 3: User Story 1
+## 阶段 3：用户故事 1
 
-- [ ] T003 [US1] Implement the first independently testable slice.
+- [ ] T003 [US1] 实现第一个可独立测试的功能切片。
 
-## Phase N: Polish & Cross-Cutting
+## 阶段 N：收尾与横切事项
 
-- [ ] T999 Validate quickstart and acceptance criteria.
-
+- [ ] T999 验证 quickstart 和验收标准。
