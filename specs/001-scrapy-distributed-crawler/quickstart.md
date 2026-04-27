@@ -27,11 +27,38 @@
 
 P0 代码位于仓库根目录下的 `src/crawler/`。建议在目标 Linux 爬虫节点上使用 Python 3.12 虚拟环境运行；当前代码保持 Python 3.9+ 兼容，方便本地做基础检查。
 
+先确认 Python 版本。若低于 Python 3.9，需要先安装新版 Python；否则 Scrapy 和本项目依赖可能无法安装。
+
+```bash
+python3 --version
+```
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
+python -m pip install --upgrade pip setuptools wheel
 python -m pip install -e ".[dev]"
 ```
+
+如果看到 `Directory '.' is not installable. File 'setup.py' not found.`，通常说明 pip 版本过旧。请先在虚拟环境内执行：
+
+```bash
+python -m pip install --upgrade pip setuptools wheel
+```
+
+如果目标节点暂时无法升级 pip，拉取包含 `setup.py` 的最新代码后，可直接走旧 pip 兼容路径：
+
+```bash
+python -m pip install -e ".[dev]"
+```
+
+如果 pip 版本较新但受 `pyproject.toml` build isolation 影响，可以在已安装 `setuptools` 和 `wheel` 后禁用 PEP 517：
+
+```bash
+python -m pip install --no-use-pep517 -e ".[dev]"
+```
+
+如果节点无法访问 PyPI，需要先配置内部 PyPI 镜像或离线 wheel 包，再执行安装。
 
 如果只做语法检查，可以不安装 Scrapy，使用：
 
@@ -128,6 +155,7 @@ PONG
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
+python -m pip install --upgrade pip setuptools wheel
 python -m pip install -e ".[dev]"
 python -m pytest
 ```
@@ -162,6 +190,7 @@ https://httpbin.org/ip
 ```bash
 export CONCURRENT_REQUESTS="8"
 export CONCURRENT_REQUESTS_PER_DOMAIN="1"
+export P0_VALIDATION_REPEAT="1"
 deploy/scripts/run-egress-validation.sh /tmp/egress-seeds.txt
 ```
 
@@ -170,6 +199,7 @@ deploy/scripts/run-egress-validation.sh /tmp/egress-seeds.txt
 - 日志中出现 `p0_egress_observed`。
 - `local_ip` 显示本地绑定的辅助 IP。
 - `observed_ip` 显示公网侧观测到的 EIP。
+- 非 200 响应也会输出 `p0_egress_observed`，用于记录状态码、绑定 IP 和外部观测结果。
 - 多次运行后，外部观测 EIP 应覆盖多个预期出口。
 
 如果只看到单个 EIP：
@@ -192,6 +222,24 @@ deploy/scripts/run-egress-validation.sh /tmp/egress-seeds.txt
 
 - 请求只从 `LOCAL_IP_POOL` 中选择本地 IP。
 - 如果仍无法看到对应公网 EIP，优先排查云网络/EIP 绑定。
+
+### Step 5a：多出口覆盖诊断
+
+如果 Step 4 只看到单个出口 IP，这是正常的：`STICKY_BY_HOST` 会让同一 Host 尽量复用同一出口。要诊断多出口覆盖，可以临时切到 `ROUND_ROBIN` 并重复请求 echo endpoint：
+
+```bash
+export IP_SELECTION_STRATEGY="ROUND_ROBIN"
+export CONCURRENT_REQUESTS="8"
+export CONCURRENT_REQUESTS_PER_DOMAIN="1"
+export P0_VALIDATION_REPEAT="30"
+deploy/scripts/run-egress-validation.sh /tmp/egress-seeds.txt
+```
+
+预期结果：
+
+- 日志中出现多个不同的 `local_ip`。
+- `observed_ip` 应对应多个公网 EIP。
+- 诊断结束后，将 `IP_SELECTION_STRATEGY` 改回 `STICKY_BY_HOST`。
 
 ### Step 6：Redis 黑名单验证
 

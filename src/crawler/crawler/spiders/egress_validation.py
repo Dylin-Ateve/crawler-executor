@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Iterable, List
+from typing import Iterable, Iterator, List
 
 import scrapy
 
@@ -9,21 +9,37 @@ class EgressValidationSpider(scrapy.Spider):
     name = "egress_validation"
     custom_settings = {
         "ROBOTSTXT_OBEY": False,
+        "HTTPERROR_ALLOW_ALL": True,
     }
 
-    def __init__(self, seed_file=None, urls=None, max_pages=0, *args, **kwargs):
+    def __init__(self, seed_file=None, urls=None, repeat=1, max_pages=0, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.seed_file = seed_file
         self.inline_urls = urls
+        self.repeat = max(int(repeat or 1), 1)
         self.max_pages = int(max_pages or 0)
         self.seen_pages = 0
 
-    def start_requests(self):
-        for url in self._load_urls():
-            if self.max_pages and self.seen_pages >= self.max_pages:
-                break
-            self.seen_pages += 1
-            yield scrapy.Request(url=url, callback=self.parse, dont_filter=True, meta={"p0_validation": True})
+    async def start(self):
+        for request in self._iter_requests():
+            yield request
+
+    def _iter_requests(self) -> Iterator[scrapy.Request]:
+        urls = self._load_urls()
+        for _ in range(self.repeat):
+            for url in urls:
+                if self.max_pages and self.seen_pages >= self.max_pages:
+                    return
+                self.seen_pages += 1
+                yield scrapy.Request(
+                    url=url,
+                    callback=self.parse,
+                    dont_filter=True,
+                    meta={
+                        "p0_validation": True,
+                        "handle_httpstatus_all": True,
+                    },
+                )
 
     def parse(self, response):
         observed_ip = self._extract_observed_ip(response.text)
@@ -73,4 +89,3 @@ class EgressValidationSpider(scrapy.Spider):
             if key in payload:
                 return payload[key]
         return stripped[:128]
-
