@@ -2,6 +2,8 @@
 
 本文档定义 P0 的预期验证流程。
 
+当前 P0 收尾状态见 `p0-validation-report.md`。截至 2026-04-27，核心出口链路已验证通过，Step 6 Redis 黑名单 TTL 暂未验证，Step 9/10 稳定性测试后置。
+
 ## 前置条件
 
 - 已准备一台 Linux 爬虫节点，目标网卡上配置了辅助私网 IPv4 地址。
@@ -22,6 +24,7 @@
 - `CONCURRENT_REQUESTS`：P0 起步值暂定 `32`，后续逐步调优。
 - `CONCURRENT_REQUESTS_PER_DOMAIN`：P0 起步值暂定 `2`，后续逐步调优。
 - `REDIS_URL`：Redis 认证连接串，真实环境必须包含用户名和密码。
+- `VALKEY_CLI`：Valkey 8.1 集群客户端，默认 `valkey-cli`。
 
 ## 本地准备
 
@@ -90,6 +93,7 @@ set +a
 | `CONCURRENT_REQUESTS_PER_DOMAIN` | 单域名并发起步值 | `2` |
 | `PROMETHEUS_PORT` | 指标端口 | `9410` |
 | `FORCE_CLOSE_CONNECTIONS` | P0 多出口验证时关闭 HTTP keep-alive | `true` |
+| `VALKEY_CLI` | Valkey 客户端命令或绝对路径 | `valkey-cli` |
 
 ## P0 验证 Runbook
 
@@ -140,7 +144,7 @@ export CRAWL_INTERFACE="<实际网卡名>"
 ### Step 1：确认 Redis 可访问
 
 ```bash
-redis-cli -u "$REDIS_URL" ping
+"${VALKEY_CLI:-valkey-cli}" -u "$REDIS_URL" ping
 ```
 
 预期结果：
@@ -164,7 +168,7 @@ python -m pytest
 预期结果：
 
 - 单元测试和 middleware smoke test 全部通过。
-- 当前基线为 `20 passed`。
+- 当前基线为 `21 passed`。
 
 ### Step 3：准备验证 URL
 
@@ -244,7 +248,84 @@ deploy/scripts/run-egress-validation.sh /tmp/egress-seeds.txt
 - 如果多个 `local_ip` 仍只对应一个 `observed_ip`，先确认 `FORCE_CLOSE_CONNECTIONS=true` 已生效；否则 HTTP keep-alive 可能复用第一次建立的连接，掩盖不同 `bindaddress` 的实际效果。
 - 诊断结束后，将 `IP_SELECTION_STRATEGY` 改回 `STICKY_BY_HOST`。
 
+当前已验证结果：
+
+- 44 次 `httpbin.org/ip` 请求可覆盖 40+ 个本地辅助 IP。
+- `FORCE_CLOSE_CONNECTIONS=true` 时，外部可观测到多个公网 EIP。
+- 该步骤证明 Scrapy `bindaddress`、本地辅助 IP 轮换、OCI EIP 映射链路均已打通。
+- 该步骤不代表生产吞吐能力，因为关闭 keep-alive 会显著增加 TCP/TLS 建连成本。
+
+### Step 5b：生产形态 keep-alive 验证
+
+多出口覆盖验证通过后，需要切回生产预期形态：`STICKY_BY_HOST` + keep-alive。该步骤验证的是稳定性和吞吐，不要求同一个 Host 覆盖多个公网 EIP。
+
+```bash
+cat >/tmp/egress-httpbin-only.txt <<'EOF'
+https://httpbin.org/ip
+EOF
+
+export IP_SELECTION_STRATEGY="STICKY_BY_HOST"
+export FORCE_CLOSE_CONNECTIONS="false"
+export CONCURRENT_REQUESTS="32"
+export CONCURRENT_REQUESTS_PER_DOMAIN="2"
+export P0_VALIDATION_REPEAT="100"
+
+deploy/scripts/run-egress-validation.sh /tmp/egress-httpbin-only.txt 2>&1 | tee /tmp/p0-5b-sticky-keepalive.log
+```
+
+统计：
+
+```bash
+grep -o 'local_ip=[^ ]*' /tmp/p0-5b-sticky-keepalive.log | sort -u
+grep -o 'observed_ip=[^ ]*' /tmp/p0-5b-sticky-keepalive.log | sort -u
+grep -E "downloader/request_count|elapsed_time_seconds|response_status_count|retry/count" /tmp/p0-5b-sticky-keepalive.log
+```
+
+预期结果：
+
+- 同一个 Host 在 `STICKY_BY_HOST` 下倾向于固定一个 `local_ip`。
+- `observed_ip` 可以只有一个，这是生产粘滞策略下的正常现象。
+- 相比 Step 5a，整体耗时应明显降低。
+- 不应出现大量异常、重试或内存持续增长。
+
+当前已验证结果：
+
+- 100 次 `httpbin.org/ip` 请求均返回 200。
+- `STICKY_BY_HOST` 下同一 Host 固定到 `local_ip=10.0.13.47`。
+- 外部观测公网出口固定为 `observed_ip=161.153.93.183`，符合 Host 粘滞预期。
+- 100 次请求耗时约 16.5 秒，未出现 retry。
+
 ### Step 6：Redis 黑名单验证
+
+当前状态：暂未验证。P0 收尾时仅确认正常抓取场景下指标中的 `crawler_ip_blacklist_count=0`，尚未人为构造连续 403/429/503 或 captcha 命中场景，因此 Redis 黑名单 TTL 进入、保持和自动退出冷却的端到端行为仍需后续单独执行。
+
+目标 Valkey 集群为 Valkey 8.1，客户端验证统一使用 `valkey-cli`。Step 6 测试脚本允许回显包含密码的 `REDIS_URL`，便于现场排查特殊字符、URL encode 和认证问题。
+
+推荐直接运行 Step 6 专用脚本。脚本会：
+
+- 使用 `valkey-cli -u "$REDIS_URL" ping` 验证认证连接。
+- 临时请求 `https://httpbin.org/status/503`，并关闭 Scrapy retry，让 503 直接进入健康状态统计。
+- 达到 `IP_FAILURE_THRESHOLD` 后检查 `${REDIS_KEY_PREFIX}:blacklist:*`。
+- 打印黑名单 key、reason 和 TTL。
+
+```bash
+export VALKEY_CLI="valkey-cli"
+export IP_FAILURE_THRESHOLD="5"
+export IP_COOLDOWN_SECONDS="1800"
+export RETRY_ENABLED="false"
+export CONCURRENT_REQUESTS="1"
+export CONCURRENT_REQUESTS_PER_DOMAIN="1"
+export P0_VALIDATION_REPEAT="5"
+
+deploy/scripts/run-step6-valkey-blacklist-validation.sh
+```
+
+如果需要改用其他会返回 403/429/503 的目标：
+
+```bash
+export P0_STEP6_URL="https://httpbin.org/status/429"
+deploy/scripts/run-step6-valkey-blacklist-validation.sh
+```
 
 运行一轮抓取后检查 Redis 健康状态：
 
@@ -255,8 +336,8 @@ deploy/scripts/inspect-ip-health.sh
 也可以直接查看 key：
 
 ```bash
-redis-cli -u "$REDIS_URL" --scan --pattern "${REDIS_KEY_PREFIX:-crawler}:blacklist:*"
-redis-cli -u "$REDIS_URL" --scan --pattern "${REDIS_KEY_PREFIX:-crawler}:fail:*"
+"${VALKEY_CLI:-valkey-cli}" -u "$REDIS_URL" --scan --pattern "${REDIS_KEY_PREFIX:-crawler}:blacklist:*"
+"${VALKEY_CLI:-valkey-cli}" -u "$REDIS_URL" --scan --pattern "${REDIS_KEY_PREFIX:-crawler}:fail:*"
 ```
 
 预期结果：
@@ -268,12 +349,28 @@ redis-cli -u "$REDIS_URL" --scan --pattern "${REDIS_KEY_PREFIX:-crawler}:fail:*"
 检查 TTL：
 
 ```bash
-redis-cli -u "$REDIS_URL" ttl "<blacklist-key>"
+"${VALKEY_CLI:-valkey-cli}" -u "$REDIS_URL" ttl "<blacklist-key>"
 ```
 
 ### Step 7：指标验证
 
-启动 spider 后，在节点上检查 Prometheus 指标：
+Prometheus 指标服务运行在 Scrapy 进程内，只在 spider 运行期间可访问。前面的短验证通常几秒内结束，如果在 spider 结束后执行 curl，`/metrics` 不会有输出。
+
+建议用一个较长验证任务或短时 soak 保持进程运行，然后在另一个终端检查指标。
+
+终端 A：
+
+```bash
+export IP_SELECTION_STRATEGY="STICKY_BY_HOST"
+export FORCE_CLOSE_CONNECTIONS="false"
+export CONCURRENT_REQUESTS="32"
+export CONCURRENT_REQUESTS_PER_DOMAIN="2"
+export P0_VALIDATION_REPEAT="10000"
+
+deploy/scripts/run-egress-validation.sh /tmp/egress-httpbin-only.txt
+```
+
+终端 B：
 
 ```bash
 curl -s "http://127.0.0.1:${PROMETHEUS_PORT:-9410}/metrics" | grep crawler_
@@ -285,6 +382,14 @@ curl -s "http://127.0.0.1:${PROMETHEUS_PORT:-9410}/metrics" | grep crawler_
 - `crawler_response_duration_seconds`
 - `crawler_ip_active_count`
 - `crawler_ip_blacklist_count`
+
+如果仍无输出，先检查端口是否正在监听：
+
+```bash
+ss -ltnp | grep "${PROMETHEUS_PORT:-9410}"
+```
+
+如果没有监听，说明 spider 进程已经结束，或 Prometheus extension 没有启动。
 
 ### Step 8：小规模真实目标验证
 
@@ -312,9 +417,15 @@ deploy/scripts/run-egress-validation.sh /tmp/egress-seeds.txt
 
 ### Step 9：短时稳定性测试
 
+当前状态：按本轮 P0 收尾安排暂时跳过，后续需要恢复执行。
+
 正式 24 小时前，先跑 10 分钟或 1 小时：
 
 ```bash
+export IP_SELECTION_STRATEGY="STICKY_BY_HOST"
+export FORCE_CLOSE_CONNECTIONS="false"
+export CONCURRENT_REQUESTS="32"
+export CONCURRENT_REQUESTS_PER_DOMAIN="2"
 export P0_SOAK_DURATION="10m"
 deploy/scripts/run-p0-soak.sh /tmp/egress-seeds.txt
 ```
@@ -326,6 +437,8 @@ deploy/scripts/run-p0-soak.sh /tmp/egress-seeds.txt
 - Redis key 和指标正常更新。
 
 ### Step 10：24 小时 P0 稳定性测试
+
+当前状态：按本轮 P0 收尾安排暂时跳过，后续需要恢复执行。
 
 ```bash
 export P0_SOAK_DURATION="24h"
@@ -388,9 +501,9 @@ deploy/scripts/run-p0-soak.sh deploy/examples/egress-seeds.example.txt
 2. 启动已开启本地 IP 轮换的 Scrapy worker。
 3. 抓取受控 URL 集，其中包含 IP echo endpoint。
 4. 验证外部观测到的公网 IP 分布。
-5. 人为触发失败阈值，验证黑名单冷却行为。
+5. 人为触发失败阈值，验证黑名单冷却行为。当前 Step 6 暂未验证。
 6. 验证指标已暴露且可以被抓取。
-7. 执行 24 小时稳定性测试，并与当前 Heritrix 基线对比吞吐和资源使用。
+7. 执行 24 小时稳定性测试，并与当前 Heritrix 基线对比吞吐和资源使用。当前 Step 9/10 后置。
 
 ## 预期 P0 证据
 
@@ -405,14 +518,17 @@ deploy/scripts/run-p0-soak.sh deploy/examples/egress-seeds.example.txt
 
 | 项目 | 目标 | 实测 | 结论 |
 |------|------|------|------|
-| 发现可用本地 IP 数 | >= 2 | 待填写 | 待填写 |
-| 外部观测 EIP 数 | >= 2 | 待填写 | 待填写 |
-| 黑名单 TTL 生效 | 是 | 待填写 | 待填写 |
-| 24 小时平均吞吐 | >= 30 pages/sec | 待填写 | 待填写 |
-| CPU 使用率 | < 50% | 待填写 | 待填写 |
-| 内存使用 | < 4 GB | 待填写 | 待填写 |
-| 错误率 | 仅记录，不设硬阈值 | 待填写 | 待填写 |
-| Redis 短暂不可用降级 | 继续执行任务，使用本地 fallback | 待填写 | 待填写 |
+| 发现可用本地 IP 数 | >= 2 | Prometheus `crawler_ip_active_count=43`；Step 5a 日志覆盖 40+ 个本地辅助 IP | 通过 |
+| 外部观测 EIP 数 | >= 2 | Step 5a 在 `FORCE_CLOSE_CONNECTIONS=true` 下观测到多个公网 EIP | 通过 |
+| 生产形态 keep-alive | `STICKY_BY_HOST` 下稳定复用连接 | Step 5b 100 次 `httpbin.org/ip` 均 200，固定 `local_ip=10.0.13.47`、`observed_ip=161.153.93.183`，耗时约 16.5 秒 | 通过 |
+| 黑名单 TTL 生效 | 是 | 暂未人为构造连续失败或 captcha 场景；仅确认正常请求下 `crawler_ip_blacklist_count=0` | 暂未验证 |
+| 指标暴露 | 请求、延迟、活跃 IP、黑名单数量可观测 | Step 7 已看到 `crawler_requests_total`、`crawler_response_duration_seconds`、`crawler_ip_active_count=43`、`crawler_ip_blacklist_count=0` | 通过 |
+| 小规模真实目标 | Wikipedia、White House 等批准目标可抓取并记录状态 | Step 8 30 次请求均 200，耗时约 2.12 秒，内存约 69 MB | 通过 |
+| 24 小时平均吞吐 | >= 30 pages/sec | 暂时跳过 Step 9/10 | 后置 |
+| CPU 使用率 | < 50% | 暂时跳过 Step 9/10，未采集 | 后置 |
+| 内存使用 | < 4 GB | 小规模验证约 69 MB；24 小时未采集 | 部分验证，长期后置 |
+| 错误率 | 仅记录，不设硬阈值 | Step 8 为 0；Step 5a 诊断中有 1 次 502 重试，属于记录项 | 已记录 |
+| Redis 短暂不可用降级 | 继续执行任务，使用本地 fallback | 暂未执行 Redis 故障注入 | 后置 |
 
 ## 待补充输入
 

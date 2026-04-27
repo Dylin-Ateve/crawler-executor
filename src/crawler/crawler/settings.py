@@ -13,6 +13,13 @@ def _int_env(name: str, default: int) -> int:
     return int(raw)
 
 
+def _bool_env(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.lower() in {"1", "true", "yes", "on"}
+
+
 BOT_NAME = "crawler"
 SPIDER_MODULES = ["crawler.spiders"]
 NEWSPIDER_MODULE = "crawler.spiders"
@@ -36,12 +43,12 @@ CONCURRENT_REQUESTS_PER_DOMAIN = _int_env("CONCURRENT_REQUESTS_PER_DOMAIN", 4)
 DOWNLOAD_DELAY = float(os.getenv("DOWNLOAD_DELAY", "0.1"))
 RANDOMIZE_DOWNLOAD_DELAY = True
 DOWNLOAD_TIMEOUT = _int_env("DOWNLOAD_TIMEOUT", 30)
-RETRY_ENABLED = True
+RETRY_ENABLED = _bool_env("RETRY_ENABLED", True)
 RETRY_TIMES = _int_env("RETRY_TIMES", 2)
 RETRY_HTTP_CODES = [500, 502, 503, 504, 522, 524, 408]
 
 PROMETHEUS_PORT = _int_env("PROMETHEUS_PORT", 9410)
-FORCE_CLOSE_CONNECTIONS = os.getenv("FORCE_CLOSE_CONNECTIONS", "true").lower() in {"1", "true", "yes", "on"}
+FORCE_CLOSE_CONNECTIONS = _bool_env("FORCE_CLOSE_CONNECTIONS", True)
 
 DOWNLOADER_MIDDLEWARES = {
     "crawler.middlewares.LocalIpRotationMiddleware": 100,
