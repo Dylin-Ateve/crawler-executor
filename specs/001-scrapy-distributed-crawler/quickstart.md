@@ -89,6 +89,7 @@ set +a
 | `CONCURRENT_REQUESTS` | 全局并发起步值 | `32` |
 | `CONCURRENT_REQUESTS_PER_DOMAIN` | 单域名并发起步值 | `2` |
 | `PROMETHEUS_PORT` | 指标端口 | `9410` |
+| `FORCE_CLOSE_CONNECTIONS` | P0 多出口验证时关闭 HTTP keep-alive | `true` |
 
 ## P0 验证 Runbook
 
@@ -232,6 +233,7 @@ export IP_SELECTION_STRATEGY="ROUND_ROBIN"
 export CONCURRENT_REQUESTS="8"
 export CONCURRENT_REQUESTS_PER_DOMAIN="1"
 export P0_VALIDATION_REPEAT="30"
+export FORCE_CLOSE_CONNECTIONS="true"
 deploy/scripts/run-egress-validation.sh /tmp/egress-seeds.txt
 ```
 
@@ -239,6 +241,7 @@ deploy/scripts/run-egress-validation.sh /tmp/egress-seeds.txt
 
 - 日志中出现多个不同的 `local_ip`。
 - `observed_ip` 应对应多个公网 EIP。
+- 如果多个 `local_ip` 仍只对应一个 `observed_ip`，先确认 `FORCE_CLOSE_CONNECTIONS=true` 已生效；否则 HTTP keep-alive 可能复用第一次建立的连接，掩盖不同 `bindaddress` 的实际效果。
 - 诊断结束后，将 `IP_SELECTION_STRATEGY` 改回 `STICKY_BY_HOST`。
 
 ### Step 6：Redis 黑名单验证

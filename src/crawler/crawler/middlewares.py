@@ -41,9 +41,10 @@ def build_redis_client(redis_url: str):
 
 
 class LocalIpRotationMiddleware:
-    def __init__(self, ip_pool: LocalIpPool, health_store: RedisHealthStore) -> None:
+    def __init__(self, ip_pool: LocalIpPool, health_store: RedisHealthStore, force_close_connections: bool = True) -> None:
         self.ip_pool = ip_pool
         self.health_store = health_store
+        self.force_close_connections = force_close_connections
         metrics.set_active_ip_count(len(self.ip_pool.ip_pool))
 
     @classmethod
@@ -64,7 +65,11 @@ class LocalIpRotationMiddleware:
             key_prefix=settings.get("REDIS_KEY_PREFIX", "crawler"),
         )
         ip_pool = LocalIpPool(ips, strategy=settings.get("IP_SELECTION_STRATEGY", "STICKY_BY_HOST"))
-        return cls(ip_pool=ip_pool, health_store=health_store)
+        return cls(
+            ip_pool=ip_pool,
+            health_store=health_store,
+            force_close_connections=settings.getbool("FORCE_CLOSE_CONNECTIONS", True),
+        )
 
     def process_request(self, request, spider):
         host = request_host(request.url)
@@ -78,6 +83,8 @@ class LocalIpRotationMiddleware:
         request.meta["egress_local_ip"] = local_ip
         request.meta["egress_host"] = host
         request.meta["request_started_monotonic"] = time.monotonic()
+        if self.force_close_connections:
+            request.headers.setdefault("Connection", "close")
         return None
 
 

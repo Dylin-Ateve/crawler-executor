@@ -41,6 +41,7 @@ RETRY_TIMES = _int_env("RETRY_TIMES", 2)
 RETRY_HTTP_CODES = [500, 502, 503, 504, 522, 524, 408]
 
 PROMETHEUS_PORT = _int_env("PROMETHEUS_PORT", 9410)
+FORCE_CLOSE_CONNECTIONS = os.getenv("FORCE_CLOSE_CONNECTIONS", "true").lower() in {"1", "true", "yes", "on"}
 
 DOWNLOADER_MIDDLEWARES = {
     "crawler.middlewares.LocalIpRotationMiddleware": 100,

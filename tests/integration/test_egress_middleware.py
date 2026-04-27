@@ -33,6 +33,7 @@ class DummyRequest:
     def __init__(self, url):
         self.url = url
         self.meta = {}
+        self.headers = {}
 
 
 class DummyResponse:
@@ -58,6 +59,7 @@ def test_rotation_middleware_sets_bindaddress_metadata():
     assert request.meta["bindaddress"] == ("10.0.0.2", 0)
     assert request.meta["egress_local_ip"] == "10.0.0.2"
     assert request.meta["egress_host"] == "example.com"
+    assert request.headers["Connection"] == "close"
 
 
 def test_health_middleware_records_success_without_scrapy_runtime():
@@ -71,4 +73,3 @@ def test_health_middleware_records_success_without_scrapy_runtime():
     response = middleware.process_response(request, DummyResponse(), DummySpider())
 
     assert response.status == 200
-
