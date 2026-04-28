@@ -14,6 +14,8 @@ setup(
         "redis>=5.0",
         "prometheus-client>=0.19",
         "psutil>=5.9",
+        "oci>=2.120",
+        "confluent-kafka>=2.3",
     ],
     extras_require={
         "dev": [
@@ -21,4 +23,3 @@ setup(
         ],
     },
 )
-

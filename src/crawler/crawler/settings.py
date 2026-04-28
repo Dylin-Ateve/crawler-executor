@@ -38,6 +38,35 @@ IP_COOLDOWN_SECONDS = _int_env("IP_COOLDOWN_SECONDS", 1800)
 REDIS_URL = os.getenv("REDIS_URL", "")
 REDIS_KEY_PREFIX = os.getenv("REDIS_KEY_PREFIX", "crawler")
 
+ENABLE_P1_PERSISTENCE = _bool_env("ENABLE_P1_PERSISTENCE", False)
+OBJECT_STORAGE_PROVIDER = os.getenv("OBJECT_STORAGE_PROVIDER", "oci")
+OCI_OBJECT_STORAGE_BUCKET = os.getenv("OCI_OBJECT_STORAGE_BUCKET", "clawer_content_staging")
+OCI_OBJECT_STORAGE_NAMESPACE = os.getenv("OCI_OBJECT_STORAGE_NAMESPACE", "axfwvgxlpupm")
+OCI_OBJECT_STORAGE_REGION = os.getenv("OCI_OBJECT_STORAGE_REGION", "us-phoenix-1")
+OCI_OBJECT_STORAGE_ENDPOINT = os.getenv(
+    "OCI_OBJECT_STORAGE_ENDPOINT",
+    "https://objectstorage.us-phoenix-1.oraclecloud.com",
+)
+OCI_AUTH_MODE = os.getenv("OCI_AUTH_MODE", "api_key")
+OCI_CONFIG_FILE = os.getenv("OCI_CONFIG_FILE", os.path.expanduser("~/.oci/config"))
+OCI_PROFILE = os.getenv("OCI_PROFILE", "DEFAULT")
+CONTENT_COMPRESSION = os.getenv("CONTENT_COMPRESSION", "gzip")
+
+KAFKA_BOOTSTRAP_SERVERS = os.getenv(
+    "KAFKA_BOOTSTRAP_SERVERS",
+    "bootstrap-clstr-hcpqnx0ycdc2ds5o.kafka.us-phoenix-1.oci.oraclecloud.com:9092",
+)
+KAFKA_SECURITY_PROTOCOL = os.getenv("KAFKA_SECURITY_PROTOCOL", "SASL_SSL")
+KAFKA_SASL_MECHANISM = os.getenv("KAFKA_SASL_MECHANISM", "SCRAM-SHA-512")
+KAFKA_USERNAME = os.getenv("KAFKA_USERNAME", "")
+KAFKA_PASSWORD = os.getenv("KAFKA_PASSWORD", "")
+KAFKA_SSL_CA_LOCATION = os.getenv("KAFKA_SSL_CA_LOCATION", "/etc/ssl/cert.pem")
+KAFKA_BATCH_SIZE = _int_env("KAFKA_BATCH_SIZE", 100)
+KAFKA_TOPIC_PAGE_METADATA = os.getenv("KAFKA_TOPIC_PAGE_METADATA", "crawler.page-metadata.v1")
+KAFKA_PRODUCER_RETRIES = _int_env("KAFKA_PRODUCER_RETRIES", 3)
+KAFKA_REQUEST_TIMEOUT_MS = _int_env("KAFKA_REQUEST_TIMEOUT_MS", 30000)
+KAFKA_DELIVERY_TIMEOUT_MS = _int_env("KAFKA_DELIVERY_TIMEOUT_MS", 120000)
+
 CONCURRENT_REQUESTS = _int_env("CONCURRENT_REQUESTS", 64)
 CONCURRENT_REQUESTS_PER_DOMAIN = _int_env("CONCURRENT_REQUESTS_PER_DOMAIN", 4)
 DOWNLOAD_DELAY = float(os.getenv("DOWNLOAD_DELAY", "0.1"))
@@ -59,3 +88,11 @@ DOWNLOADER_MIDDLEWARES = {
 EXTENSIONS = {
     "crawler.metrics.PrometheusMetricsExtension": 500,
 }
+
+ITEM_PIPELINES = (
+    {
+        "crawler.pipelines.ContentPersistencePipeline": 300,
+    }
+    if ENABLE_P1_PERSISTENCE
+    else {}
+)

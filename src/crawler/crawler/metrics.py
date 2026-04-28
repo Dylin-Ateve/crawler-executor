@@ -26,6 +26,9 @@ class CrawlerMetrics:
             self.response_duration_seconds = _NoopMetric()
             self.active_ip_count = _NoopMetric()
             self.blacklist_count = _NoopMetric()
+            self.storage_uploads_total = _NoopMetric()
+            self.kafka_publishes_total = _NoopMetric()
+            self.content_skips_total = _NoopMetric()
             return
 
         self.requests_total = Counter(
@@ -40,6 +43,21 @@ class CrawlerMetrics:
         )
         self.active_ip_count = Gauge("crawler_ip_active_count", "Active local egress IP count.")
         self.blacklist_count = Gauge("crawler_ip_blacklist_count", "Current blacklisted host/IP pair count.")
+        self.storage_uploads_total = Counter(
+            "crawler_storage_uploads_total",
+            "Total object storage upload attempts by provider, bucket and result.",
+            ["provider", "bucket", "result"],
+        )
+        self.kafka_publishes_total = Counter(
+            "crawler_kafka_publishes_total",
+            "Total Kafka publish attempts by topic and result.",
+            ["topic", "result"],
+        )
+        self.content_skips_total = Counter(
+            "crawler_content_skips_total",
+            "Total content persistence skips by reason.",
+            ["reason"],
+        )
 
     def record_response(self, host: str, status: str, egress_ip: str, duration_seconds: Optional[float]) -> None:
         self.requests_total.labels(host=host, status=status, egress_ip=egress_ip or "unknown").inc()
@@ -51,6 +69,15 @@ class CrawlerMetrics:
 
     def set_blacklist_count(self, count: int) -> None:
         self.blacklist_count.set(count)
+
+    def record_storage_upload(self, provider: str, bucket: str, result: str) -> None:
+        self.storage_uploads_total.labels(provider=provider, bucket=bucket, result=result).inc()
+
+    def record_kafka_publish(self, topic: str, result: str) -> None:
+        self.kafka_publishes_total.labels(topic=topic, result=result).inc()
+
+    def record_content_skip(self, reason: str) -> None:
+        self.content_skips_total.labels(reason=reason).inc()
 
 
 metrics = CrawlerMetrics()
@@ -82,4 +109,3 @@ class PrometheusMetricsExtension:
             spider.logger.info("Prometheus metrics endpoint started on port %s", self.port)
         except Exception as exc:
             spider.logger.warning("failed to start Prometheus metrics endpoint: %s", exc)
-
