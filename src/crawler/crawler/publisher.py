@@ -39,6 +39,7 @@ class KafkaPublisherConfig:
     retries: int = 3
     request_timeout_ms: int = 30000
     delivery_timeout_ms: int = 120000
+    flush_timeout_ms: int = 130000
 
 
 class ConfluentKafkaPageMetadataPublisher:
@@ -66,6 +67,10 @@ class ConfluentKafkaPageMetadataPublisher:
             "retries": config.retries,
             "request.timeout.ms": config.request_timeout_ms,
             "delivery.timeout.ms": config.delivery_timeout_ms,
+            "message.timeout.ms": config.delivery_timeout_ms,
+            "socket.timeout.ms": config.request_timeout_ms,
+            "reconnect.backoff.ms": 250,
+            "reconnect.backoff.max.ms": 1000,
             "batch.num.messages": config.batch_size,
         }
         return Producer(producer_config)
@@ -80,12 +85,18 @@ class ConfluentKafkaPageMetadataPublisher:
 
         try:
             self.producer.produce(self.topic, key=key.encode("utf-8"), value=encoded, on_delivery=on_delivery)
-            self.producer.flush()
+            pending = self.producer.flush(configured_flush_timeout_seconds(self.config))
         except Exception as exc:
             raise PublishError(f"failed to publish page metadata key={key}") from exc
 
         if delivery_errors:
             raise PublishError(f"failed to publish page metadata key={key}") from delivery_errors[0]
+        if pending:
+            try:
+                self.producer.purge()
+            except Exception:
+                pass
+            raise PublishError(f"failed to publish page metadata key={key}: flush timeout with {pending} pending message(s)")
 
 
 class FakePageMetadataPublisher:
@@ -111,6 +122,11 @@ def resolve_ssl_ca_location(configured_path: str) -> str:
     return configured_path or DEFAULT_SSL_CA_LOCATION
 
 
+def configured_flush_timeout_seconds(config: KafkaPublisherConfig) -> float:
+    timeout_ms = config.flush_timeout_ms or config.delivery_timeout_ms
+    return max(timeout_ms / 1000.0, 1.0)
+
+
 def build_page_metadata_publisher(settings) -> PageMetadataPublisher:
     config = KafkaPublisherConfig(
         bootstrap_servers=settings.get("KAFKA_BOOTSTRAP_SERVERS"),
@@ -124,5 +140,6 @@ def build_page_metadata_publisher(settings) -> PageMetadataPublisher:
         retries=settings.getint("KAFKA_PRODUCER_RETRIES", 3),
         request_timeout_ms=settings.getint("KAFKA_REQUEST_TIMEOUT_MS", 30000),
         delivery_timeout_ms=settings.getint("KAFKA_DELIVERY_TIMEOUT_MS", 120000),
+        flush_timeout_ms=settings.getint("KAFKA_FLUSH_TIMEOUT_MS", 130000),
     )
     return ConfluentKafkaPageMetadataPublisher(config)

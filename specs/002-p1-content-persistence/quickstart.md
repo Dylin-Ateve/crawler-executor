@@ -32,6 +32,7 @@
 | `KAFKA_SSL_CA_LOCATION` | Kafka CA 路径 | `/etc/pki/tls/certs/ca-bundle.crt` |
 | `KAFKA_BATCH_SIZE` | Kafka batch size | `100` |
 | `KAFKA_TOPIC_PAGE_METADATA` | 页面元数据 topic | `crawler.page-metadata.v1` |
+| `KAFKA_FLUSH_TIMEOUT_MS` | Kafka 单次 publish flush 上限 | `130000` |
 
 ## Step 0：确认配置
 
@@ -53,6 +54,7 @@ export KAFKA_PASSWORD="<ENV_VAR_REFERENCE>"
 export KAFKA_SSL_CA_LOCATION="/etc/pki/tls/certs/ca-bundle.crt"
 export KAFKA_BATCH_SIZE="100"
 export KAFKA_TOPIC_PAGE_METADATA="crawler.page-metadata.v1"
+export KAFKA_FLUSH_TIMEOUT_MS="130000"
 ```
 
 说明：Oracle Linux 8 默认使用 `/etc/pki/tls/certs/ca-bundle.crt`。如果目标节点不是该路径，程序会在常见 CA bundle 路径中自动兜底；也可以通过 `KAFKA_SSL_CA_LOCATION` 显式指定实际文件。
@@ -124,7 +126,7 @@ deploy/scripts/run-p1-storage-failure-validation.sh /tmp/p1-seeds.txt
 
 ## Step 5：Kafka 失败记录验证
 
-临时配置不可达 Kafka broker。脚本默认使用 `127.0.0.1:1` 作为失败 broker，并缩短 Kafka producer 超时，避免等待过久。
+临时配置不可达 Kafka broker。脚本默认使用 `127.0.0.1:1` 作为失败 broker，并将 `KAFKA_DELIVERY_TIMEOUT_MS` 缩短到 `6000`、`KAFKA_FLUSH_TIMEOUT_MS` 缩短到 `8000`，避免等待过久。
 
 ```bash
 deploy/scripts/run-p1-kafka-failure-validation.sh /tmp/p1-seeds.txt

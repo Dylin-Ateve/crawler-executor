@@ -78,6 +78,7 @@ Kafka publisher
 | `KAFKA_SSL_CA_LOCATION` | `/etc/pki/tls/certs/ca-bundle.crt` | CA 路径 |
 | `KAFKA_BATCH_SIZE` | `100` | 用户提供配置 |
 | `KAFKA_TOPIC_PAGE_METADATA` | `crawler.page-metadata.v1` | 可通过环境覆盖 |
+| `KAFKA_FLUSH_TIMEOUT_MS` | `130000` | Kafka producer 单次 publish flush 上限；失败验证脚本会临时缩短 |
 
 ## 项目结构
 
