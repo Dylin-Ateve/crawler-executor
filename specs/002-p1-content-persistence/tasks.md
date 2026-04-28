@@ -51,10 +51,12 @@
 - [x] T032 创建 `deploy/scripts/run-p1-persistence-validation.sh`。
 - [x] T033 更新 `deploy/examples/p0.env.example` 或新增 P1 env 示例。
 - [x] T034 在 `quickstart.md` 记录真实环境验证结果。
+- [x] T034a 创建 P1 对象存储失败验证脚本。
+- [x] T034b 创建 P1 Kafka 失败验证脚本。
 
 ## 阶段 6：P1 退出评审
 
-- [ ] T035 收集对象存储写入与读取证据。
+- [x] T035 收集对象存储写入与读取证据。
 - [x] T036 收集 Kafka metadata 消息样例。
 - [ ] T037 验证对象存储失败不会发布 metadata。
 - [ ] T038 验证 Kafka 故障会记录发布失败日志和指标。

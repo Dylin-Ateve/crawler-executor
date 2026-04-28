@@ -110,28 +110,38 @@ deploy/scripts/run-p1-persistence-validation.sh /tmp/p1-seeds.txt
 
 ## Step 4：对象存储失败验证
 
-通过错误 endpoint、错误 bucket 或 fake client 模拟上传失败。
+通过不存在的 bucket 模拟上传失败。脚本会临时覆盖 `OCI_OBJECT_STORAGE_BUCKET`，不会修改当前 shell 之外的配置。
+
+```bash
+deploy/scripts/run-p1-storage-failure-validation.sh /tmp/p1-seeds.txt
+```
 
 预期结果：
 
 - 不发布 `page-metadata`。
 - 日志和指标包含失败原因。
+- 脚本输出 `Step T037 验证通过：对象存储失败后未发布 page metadata。`
 
 ## Step 5：Kafka 失败记录验证
 
-临时配置不可达 Kafka broker。
+临时配置不可达 Kafka broker。脚本默认使用 `127.0.0.1:1` 作为失败 broker，并缩短 Kafka producer 超时，避免等待过久。
+
+```bash
+deploy/scripts/run-p1-kafka-failure-validation.sh /tmp/p1-seeds.txt
+```
 
 预期结果：
 
 - HTML 已写入对象存储。
 - Kafka 发布失败会记录结构化日志和指标。
 - P1 不实现本地 outbox，不验证本地持久重放。
+- 脚本输出 `Step T038 验证通过：对象已写入，Kafka 发布失败被记录。`
 
 ## P1 结果记录表
 
 | 项目 | 目标 | 实测 | 结论 |
 |------|------|------|------|
-| 对象存储写入 | HTML 压缩后可写入并读取 | 端到端已写入；读取校验脚本已补充，真实 smoke 待执行 | 部分通过 |
+| 对象存储写入 | HTML 压缩后可写入并读取 | `p1-object-storage-smoke.sh` 写入、读取、gzip 解压校验通过 | 通过 |
 | Kafka metadata 发布 | 内容写入后发布 `page-metadata` | `crawler.page-metadata.v1` smoke 与端到端均通过 | 通过 |
 | 上传失败保护 | 上传失败不发布 metadata | 待执行 | 待验证 |
 | Kafka 失败记录 | Kafka 故障后记录日志和指标 | 待执行 | 待验证 |
@@ -150,6 +160,21 @@ key=77d1ac3bdf379bdf4b24601e6bc6c63d0d99c7adeeabc770f040f1106ea4d6dd:17773669916
 ```
 
 网络前置修正：Kafka bootstrap 解析为私网地址 `10.0.4.155`，初始 TCP 连接到 `10.0.4.155:9092` 超时。放通 Kafka 侧 ingress 后验证通过。
+
+### 2026-04-28 Object Storage smoke test
+
+结果：通过。
+
+```text
+p1_object_storage_smoke_ok
+provider=oci
+bucket=clawer_content_staging
+key=smoke/p1/object-storage-smoke-20260428T093141Z.txt.gz
+etag=709fa028-1e7e-4c74-8615-b39c35e43470
+verified_uncompressed_size=32
+```
+
+验证说明：对象写入后可读取，读取结果可以按 gzip 解压并还原原文。对象按 `.gz` 归档文件保存，不设置 HTTP `Content-Encoding: gzip`。
 
 ### 2026-04-28 P1 端到端抓取验证
 

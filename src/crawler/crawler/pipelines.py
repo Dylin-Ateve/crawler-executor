@@ -95,7 +95,12 @@ class ContentPersistencePipeline:
             metrics.record_storage_upload(self.storage_client.provider, self.storage_client.bucket, "success")
         except StorageError as exc:
             metrics.record_storage_upload(self.storage_client.provider, self.storage_client.bucket, "failure")
-            spider.logger.error("p1_storage_upload_failed url=%s error=%s", item.get("url"), exc)
+            spider.logger.error(
+                "p1_storage_upload_failed url=%s storage_key=%s error=%s",
+                item.get("url"),
+                storage_key,
+                exc,
+            )
             item["p1_persisted"] = False
             item["p1_skip_reason"] = "storage_upload_failed"
             return item
@@ -122,7 +127,13 @@ class ContentPersistencePipeline:
             metrics.record_kafka_publish(self.publisher.topic, "success")
         except PublishError as exc:
             metrics.record_kafka_publish(self.publisher.topic, "failure")
-            spider.logger.error("p1_kafka_publish_failed url=%s snapshot_id=%s error=%s", item.get("url"), snapshot_id, exc)
+            spider.logger.error(
+                "p1_kafka_publish_failed url=%s snapshot_id=%s storage_key=%s error=%s",
+                item.get("url"),
+                snapshot_id,
+                stored.key,
+                exc,
+            )
             item["p1_persisted"] = True
             item["p1_published"] = False
             item["p1_storage_key"] = stored.key
