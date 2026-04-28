@@ -58,9 +58,9 @@
 
 - [x] T035 收集对象存储写入与读取证据。
 - [x] T036 收集 Kafka metadata 消息样例。
-- [ ] T037 验证对象存储失败不会发布 metadata。
-- [ ] T038 验证 Kafka 故障会记录发布失败日志和指标。
-- [ ] T039 决定是否进入 PostgreSQL/ClickHouse 消费者或 P2 编排部署。
+- [x] T037 验证对象存储失败不会发布 metadata。
+- [x] T038 验证 Kafka 故障会记录发布失败日志和指标。
+- [x] T039 决定是否进入 PostgreSQL/ClickHouse 消费者或 P2 编排部署。
 
 ## 依赖与执行顺序
 

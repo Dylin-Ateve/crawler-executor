@@ -94,6 +94,7 @@ class ConfluentKafkaPageMetadataPublisher:
         if pending:
             try:
                 self.producer.purge()
+                self.producer.flush(1.0)
             except Exception:
                 pass
             raise PublishError(f"failed to publish page metadata key={key}: flush timeout with {pending} pending message(s)")

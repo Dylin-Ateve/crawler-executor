@@ -126,7 +126,7 @@ deploy/scripts/run-p1-storage-failure-validation.sh /tmp/p1-seeds.txt
 
 ## Step 5：Kafka 失败记录验证
 
-临时配置不可达 Kafka broker。脚本默认使用 `127.0.0.1:1` 作为失败 broker，并将 `KAFKA_DELIVERY_TIMEOUT_MS` 缩短到 `6000`、`KAFKA_FLUSH_TIMEOUT_MS` 缩短到 `8000`，避免等待过久。
+临时配置不可达 Kafka broker。脚本默认使用 `127.0.0.1:1` 作为失败 broker，并将 `KAFKA_DELIVERY_TIMEOUT_MS` 缩短到 `6000`、`KAFKA_FLUSH_TIMEOUT_MS` 缩短到 `8000`，避免等待过久；如需覆盖失败验证参数，使用 `P1_FAILURE_KAFKA_*` 环境变量。
 
 ```bash
 deploy/scripts/run-p1-kafka-failure-validation.sh /tmp/p1-seeds.txt
@@ -145,8 +145,8 @@ deploy/scripts/run-p1-kafka-failure-validation.sh /tmp/p1-seeds.txt
 |------|------|------|------|
 | 对象存储写入 | HTML 压缩后可写入并读取 | `p1-object-storage-smoke.sh` 写入、读取、gzip 解压校验通过 | 通过 |
 | Kafka metadata 发布 | 内容写入后发布 `page-metadata` | `crawler.page-metadata.v1` smoke 与端到端均通过 | 通过 |
-| 上传失败保护 | 上传失败不发布 metadata | 待执行 | 待验证 |
-| Kafka 失败记录 | Kafka 故障后记录日志和指标 | 待执行 | 待验证 |
+| 上传失败保护 | 上传失败不发布 metadata | `run-p1-storage-failure-validation.sh` 通过 | 通过 |
+| Kafka 失败记录 | Kafka 故障后记录日志和指标 | `run-p1-kafka-failure-validation.sh` 通过 | 通过 |
 | 幂等键 | `snapshot_id` 可用于去重 | 已生成 `url_hash:fetched_at_ms` 格式 key | 通过 |
 
 ## 真实环境验证记录
@@ -191,3 +191,28 @@ storage_key=pages/v1/2026/04/28/061bdbf8744ebfcd/1868061f6e5b3766a469a034e502180
 ```
 
 限制说明：本次端到端验证未配置 `REDIS_URL`，因此 P0 的 `LocalIpRotationMiddleware` 与 `IpHealthCheckMiddleware` 被禁用，日志中 `local_ip=None`。该结果证明 P1 对象存储与 Kafka producer 链路通过；如需验证 P0+P1 组合链路，需要带上 P0 的 Valkey 和本地出口 IP 配置再跑一次。
+
+### 2026-04-28 Object Storage 失败验证
+
+结果：通过。
+
+```text
+OCI_OBJECT_STORAGE_BUCKET=crawler-p1-missing-bucket-20260428093716
+p1_storage_upload_failed url=https://www.wikipedia.org/ storage_key=pages/v1/2026/04/28/061bdbf8744ebfcd/1868061f6e5b3766a469a034e502180e366f5d73803e56553544d5a3b031f24b/1868061f6e5b3766a469a034e502180e366f5d73803e56553544d5a3b031f24b:1777369037263.html.gz
+Step T037 验证通过：对象存储失败后未发布 page metadata。
+```
+
+验证说明：Scrapy 正常结束，日志出现 `p1_storage_upload_failed`，未出现 `p1_page_metadata_published`。
+
+### 2026-04-28 Kafka 失败验证
+
+结果：通过。
+
+```text
+KAFKA_BOOTSTRAP_SERVERS=127.0.0.1:1
+KAFKA_FLUSH_TIMEOUT_MS=8000
+p1_kafka_publish_failed url=https://www.wikipedia.org/ snapshot_id=1868061f6e5b3766a469a034e502180e366f5d73803e56553544d5a3b031f24b:1777369275172 storage_key=pages/v1/2026/04/28/061bdbf8744ebfcd/1868061f6e5b3766a469a034e502180e366f5d73803e56553544d5a3b031f24b/1868061f6e5b3766a469a034e502180e366f5d73803e56553544d5a3b031f24b:1777369275172.html.gz error=failed to publish page metadata key=1868061f6e5b3766a469a034e502180e366f5d73803e56553544d5a3b031f24b:1777369275172: flush timeout with 1 pending message(s)
+Step T038 验证通过：对象已写入，Kafka 发布失败被记录。
+```
+
+验证说明：对象存储未失败，Kafka broker 不可达时记录 `p1_kafka_publish_failed`，未出现 `p1_page_metadata_published`。

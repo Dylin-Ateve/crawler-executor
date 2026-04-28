@@ -95,3 +95,4 @@ def test_publish_page_metadata_raises_when_flush_leaves_pending_messages():
         raise AssertionError("expected PublishError")
 
     assert producer.purged is True
+    assert producer.flush_timeout == 1.0
