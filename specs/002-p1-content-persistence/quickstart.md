@@ -28,7 +28,7 @@
 | `KAFKA_SASL_MECHANISM` | Kafka SASL 机制 | `SCRAM-SHA-512` |
 | `KAFKA_USERNAME` | Kafka 用户名 | 环境变量注入 |
 | `KAFKA_PASSWORD` | Kafka 密码 | 环境变量注入 |
-| `KAFKA_SSL_CA_LOCATION` | Kafka CA 路径 | `/etc/ssl/cert.pem` |
+| `KAFKA_SSL_CA_LOCATION` | Kafka CA 路径 | `/etc/pki/tls/certs/ca-bundle.crt` |
 | `KAFKA_BATCH_SIZE` | Kafka batch size | `100` |
 | `KAFKA_TOPIC_PAGE_METADATA` | 页面元数据 topic | `crawler.page-metadata.v1` |
 
@@ -49,10 +49,12 @@ export KAFKA_SECURITY_PROTOCOL="SASL_SSL"
 export KAFKA_SASL_MECHANISM="SCRAM-SHA-512"
 export KAFKA_USERNAME="<ENV_VAR_REFERENCE>"
 export KAFKA_PASSWORD="<ENV_VAR_REFERENCE>"
-export KAFKA_SSL_CA_LOCATION="/etc/ssl/cert.pem"
+export KAFKA_SSL_CA_LOCATION="/etc/pki/tls/certs/ca-bundle.crt"
 export KAFKA_BATCH_SIZE="100"
 export KAFKA_TOPIC_PAGE_METADATA="crawler.page-metadata.v1"
 ```
+
+说明：Oracle Linux 8 默认使用 `/etc/pki/tls/certs/ca-bundle.crt`。如果目标节点不是该路径，程序会在常见 CA bundle 路径中自动兜底；也可以通过 `KAFKA_SSL_CA_LOCATION` 显式指定实际文件。
 
 ## Step 1：对象存储 smoke test
 

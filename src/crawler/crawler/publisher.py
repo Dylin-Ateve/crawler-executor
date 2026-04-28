@@ -1,8 +1,18 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Protocol
+
+
+DEFAULT_SSL_CA_LOCATION = "/etc/pki/tls/certs/ca-bundle.crt"
+COMMON_SSL_CA_LOCATIONS = (
+    DEFAULT_SSL_CA_LOCATION,
+    "/etc/ssl/certs/ca-certificates.crt",
+    "/etc/ssl/certs/ca-bundle.crt",
+    "/etc/ssl/cert.pem",
+)
 
 
 class PublishError(RuntimeError):
@@ -24,7 +34,7 @@ class KafkaPublisherConfig:
     sasl_mechanism: str = "SCRAM-SHA-512"
     username: str = ""
     password: str = ""
-    ssl_ca_location: str = "/etc/ssl/cert.pem"
+    ssl_ca_location: str = DEFAULT_SSL_CA_LOCATION
     batch_size: int = 100
     retries: int = 3
     request_timeout_ms: int = 30000
@@ -50,7 +60,7 @@ class ConfluentKafkaPageMetadataPublisher:
             "sasl.mechanisms": config.sasl_mechanism,
             "sasl.username": config.username,
             "sasl.password": config.password,
-            "ssl.ca.location": config.ssl_ca_location,
+            "ssl.ca.location": resolve_ssl_ca_location(config.ssl_ca_location),
             "acks": "all",
             "enable.idempotence": True,
             "retries": config.retries,
@@ -90,6 +100,17 @@ class FakePageMetadataPublisher:
         self.messages.append({"topic": self.topic, "key": key, "payload": payload})
 
 
+def resolve_ssl_ca_location(configured_path: str) -> str:
+    if configured_path and os.path.exists(configured_path):
+        return configured_path
+
+    for candidate in COMMON_SSL_CA_LOCATIONS:
+        if os.path.exists(candidate):
+            return candidate
+
+    return configured_path or DEFAULT_SSL_CA_LOCATION
+
+
 def build_page_metadata_publisher(settings) -> PageMetadataPublisher:
     config = KafkaPublisherConfig(
         bootstrap_servers=settings.get("KAFKA_BOOTSTRAP_SERVERS"),
@@ -98,7 +119,7 @@ def build_page_metadata_publisher(settings) -> PageMetadataPublisher:
         sasl_mechanism=settings.get("KAFKA_SASL_MECHANISM", "SCRAM-SHA-512"),
         username=settings.get("KAFKA_USERNAME", ""),
         password=settings.get("KAFKA_PASSWORD", ""),
-        ssl_ca_location=settings.get("KAFKA_SSL_CA_LOCATION", "/etc/ssl/cert.pem"),
+        ssl_ca_location=settings.get("KAFKA_SSL_CA_LOCATION", DEFAULT_SSL_CA_LOCATION),
         batch_size=settings.getint("KAFKA_BATCH_SIZE", 100),
         retries=settings.getint("KAFKA_PRODUCER_RETRIES", 3),
         request_timeout_ms=settings.getint("KAFKA_REQUEST_TIMEOUT_MS", 30000),
