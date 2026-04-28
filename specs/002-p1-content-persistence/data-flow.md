@@ -96,6 +96,15 @@ P1 不删除旧对象。旧对象清理由 P2 处理；metadata/DB 层后续按 
 | batch_size | `100` |
 | topic 自动创建 | 允许 |
 
+## gzip 存储语义
+
+P1 将 HTML 内容压缩为 gzip 字节后，以 `.html.gz` 对象归档保存。对象上传时不设置 HTTP `Content-Encoding: gzip`，避免 OCI SDK 或 HTTP 客户端在读取时自动解压，导致下游无法稳定判断对象字节是否仍为 gzip 格式。
+
+压缩格式通过两处表达：
+
+- 对象 metadata：`compression=gzip`
+- Kafka `page-metadata`：`compression=gzip`
+
 默认 topic：
 
 | topic | 用途 | message key |

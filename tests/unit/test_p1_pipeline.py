@@ -124,6 +124,9 @@ def test_pipeline_persists_html_then_publishes_metadata():
     assert item["p1_published"] is True
     assert len(storage.objects) == 1
     assert len(publisher.messages) == 1
+    stored_object = next(iter(storage.objects.values()))
+    assert stored_object["content_encoding"] is None
+    assert stored_object["metadata"]["compression"] == "gzip"
     payload = publisher.messages[0]["payload"]
     assert payload["bucket"] == "clawer_content_staging"
     assert payload["outlinks_count"] == 1

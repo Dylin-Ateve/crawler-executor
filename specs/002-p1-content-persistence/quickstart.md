@@ -69,6 +69,7 @@ deploy/scripts/p1-object-storage-smoke.sh
 
 - 可以写入测试对象。
 - 可以读取测试对象并完成 gzip 解压校验。
+- P1 对象按 `.gz` 归档文件保存，不设置 HTTP `Content-Encoding: gzip`，避免 OCI SDK 或 HTTP 客户端自动解压导致读取语义不一致；压缩格式通过对象 metadata 和 Kafka `compression` 字段表达。
 - 测试对象使用 `smoke/p1/` 前缀，P1 不执行删除；后续清理由 P2 或人工运维处理。
 
 ## Step 2：Kafka smoke test

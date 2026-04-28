@@ -20,8 +20,8 @@ def main() -> int:
             key,
             body,
             content_type="text/plain",
-            content_encoding="gzip",
-            metadata={"purpose": "p1-smoke"},
+            content_encoding=None,
+            metadata={"purpose": "p1-smoke", "compression": "gzip"},
         )
         downloaded = client.get_object(key)
     except StorageError as exc:

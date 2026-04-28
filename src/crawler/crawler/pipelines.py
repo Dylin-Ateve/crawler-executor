@@ -89,8 +89,8 @@ class ContentPersistencePipeline:
                 storage_key,
                 artifact.compressed_body,
                 content_type="text/html",
-                content_encoding=self.compression,
-                metadata=metadata,
+                content_encoding=None,
+                metadata={**metadata, "compression": self.compression},
             )
             metrics.record_storage_upload(self.storage_client.provider, self.storage_client.bucket, "success")
         except StorageError as exc:
