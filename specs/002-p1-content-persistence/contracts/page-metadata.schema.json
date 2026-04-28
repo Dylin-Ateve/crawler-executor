@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "crawler.page-metadata.v1",
+  "title": "Crawler Page Metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "snapshot_id",
+    "url_hash",
+    "canonical_url",
+    "original_url",
+    "host",
+    "fetched_at",
+    "status_code",
+    "content_sha256",
+    "storage_provider",
+    "bucket",
+    "storage_key",
+    "compression"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "snapshot_id": { "type": "string", "minLength": 1 },
+    "url_hash": { "type": "string", "minLength": 1 },
+    "canonical_url": { "type": "string", "format": "uri" },
+    "original_url": { "type": "string", "format": "uri" },
+    "host": { "type": "string", "minLength": 1 },
+    "fetched_at": { "type": "string", "format": "date-time" },
+    "status_code": { "type": "integer", "minimum": 100, "maximum": 599 },
+    "content_type": { "type": ["string", "null"] },
+    "response_headers": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "content_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "storage_provider": { "enum": ["oci"] },
+    "bucket": { "type": "string", "minLength": 1 },
+    "storage_key": { "type": "string", "minLength": 1 },
+    "storage_etag": { "type": ["string", "null"] },
+    "compression": { "enum": ["gzip"] },
+    "uncompressed_size": { "type": "integer", "minimum": 0 },
+    "compressed_size": { "type": "integer", "minimum": 0 },
+    "outlinks_count": { "type": "integer", "minimum": 0 },
+    "outlinks_external_count": { "type": "integer", "minimum": 0 },
+    "egress_local_ip": { "type": ["string", "null"] },
+    "observed_egress_ip": { "type": ["string", "null"] }
+  }
+}

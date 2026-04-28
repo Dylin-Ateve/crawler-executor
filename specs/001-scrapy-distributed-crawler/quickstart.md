@@ -2,7 +2,7 @@
 
 本文档定义 P0 的预期验证流程。
 
-当前 P0 收尾状态见 `p0-validation-report.md`。截至 2026-04-27，核心出口链路已验证通过，Step 6 Redis 黑名单 TTL 暂未验证，Step 9/10 稳定性测试后置。
+当前 P0 收尾状态见 `p0-validation-report.md`。截至 2026-04-27，核心出口链路与 Step 6 Redis 黑名单 TTL 均已验证通过，Step 9/10 稳定性测试后置。
 
 ## 前置条件
 
@@ -85,7 +85,7 @@ set +a
 
 | 变量 | 说明 | 示例 |
 |------|------|------|
-| `REDIS_URL` | Redis 认证连接串，密码必须 URL encode | `redis://crawler:CHANGE_ME_URL_ENCODED@redis-host:6379/0` |
+| `REDIS_URL` | Redis 认证连接串，密码必须 URL encode；TLS 用 6379，非 TLS 用 7379 | `redis://crawler:CHANGE_ME_URL_ENCODED@redis-host:6379/0` |
 | `CRAWL_INTERFACE` | 扫描辅助 IP 的网卡 | `ens3` |
 | `EXCLUDED_LOCAL_IPS` | 管理 IP 排除列表，多个用逗号分隔 | `10.0.12.196,10.0.12.197` |
 | `IP_SELECTION_STRATEGY` | IP 选择策略 | `STICKY_BY_HOST` |
@@ -112,6 +112,8 @@ REDIS_URL='redis://crawler:CHANGE_ME_URL_ENCODED@redis-host:6379/0'
 ```
 
 如果密码包含 `@`、`:`、`/`、`#`、`%`、`&`、`!` 等特殊字符，必须先做 URL encode。只有密码、没有用户名的 Redis 旧式认证格式不作为本项目默认配置。
+
+Tip：Valkey 连接端口按部署约定区分，使用 TLS 时采用 `6379`，不使用 TLS 时采用 `7379`。
 
 仓库提供了密码编码工具，输入时不会回显原始密码：
 
@@ -297,7 +299,7 @@ grep -E "downloader/request_count|elapsed_time_seconds|response_status_count|ret
 
 ### Step 6：Redis 黑名单验证
 
-当前状态：暂未验证。P0 收尾时仅确认正常抓取场景下指标中的 `crawler_ip_blacklist_count=0`，尚未人为构造连续 403/429/503 或 captcha 命中场景，因此 Redis 黑名单 TTL 进入、保持和自动退出冷却的端到端行为仍需后续单独执行。
+当前状态：已验证。2026-04-27 在 Valkey 8.1 集群上使用 `https://httpbin.org/status/503` 连续触发 5 次 503，Valkey 中出现 `crawler-executor:blacklist:httpbin.org:10.0.15.67`，reason 为 `HTTP_503`，TTL 约 1800 秒。历史测试中还存在未过期的 `crawler-executor:blacklist:httpbin.org:10.0.13.47`，TTL 约 1767 秒。
 
 目标 Valkey 集群为 Valkey 8.1，客户端验证统一使用 `valkey-cli`。Step 6 测试脚本允许回显包含密码的 `REDIS_URL`，便于现场排查特殊字符、URL encode 和认证问题。
 
@@ -501,7 +503,7 @@ deploy/scripts/run-p0-soak.sh deploy/examples/egress-seeds.example.txt
 2. 启动已开启本地 IP 轮换的 Scrapy worker。
 3. 抓取受控 URL 集，其中包含 IP echo endpoint。
 4. 验证外部观测到的公网 IP 分布。
-5. 人为触发失败阈值，验证黑名单冷却行为。当前 Step 6 暂未验证。
+5. 人为触发失败阈值，验证黑名单冷却行为。当前 Step 6 已通过。
 6. 验证指标已暴露且可以被抓取。
 7. 执行 24 小时稳定性测试，并与当前 Heritrix 基线对比吞吐和资源使用。当前 Step 9/10 后置。
 
@@ -521,7 +523,7 @@ deploy/scripts/run-p0-soak.sh deploy/examples/egress-seeds.example.txt
 | 发现可用本地 IP 数 | >= 2 | Prometheus `crawler_ip_active_count=43`；Step 5a 日志覆盖 40+ 个本地辅助 IP | 通过 |
 | 外部观测 EIP 数 | >= 2 | Step 5a 在 `FORCE_CLOSE_CONNECTIONS=true` 下观测到多个公网 EIP | 通过 |
 | 生产形态 keep-alive | `STICKY_BY_HOST` 下稳定复用连接 | Step 5b 100 次 `httpbin.org/ip` 均 200，固定 `local_ip=10.0.13.47`、`observed_ip=161.153.93.183`，耗时约 16.5 秒 | 通过 |
-| 黑名单 TTL 生效 | 是 | 暂未人为构造连续失败或 captcha 场景；仅确认正常请求下 `crawler_ip_blacklist_count=0` | 暂未验证 |
+| 黑名单 TTL 生效 | 是 | Step 6 使用 5 次 503 触发 Valkey 黑名单，key 为 `crawler-executor:blacklist:httpbin.org:10.0.15.67`，reason 为 `HTTP_503`，TTL 约 1800 秒 | 通过 |
 | 指标暴露 | 请求、延迟、活跃 IP、黑名单数量可观测 | Step 7 已看到 `crawler_requests_total`、`crawler_response_duration_seconds`、`crawler_ip_active_count=43`、`crawler_ip_blacklist_count=0` | 通过 |
 | 小规模真实目标 | Wikipedia、White House 等批准目标可抓取并记录状态 | Step 8 30 次请求均 200，耗时约 2.12 秒，内存约 69 MB | 通过 |
 | 24 小时平均吞吐 | >= 30 pages/sec | 暂时跳过 Step 9/10 | 后置 |

@@ -8,6 +8,7 @@ FAILURE_THRESHOLD="${IP_FAILURE_THRESHOLD:-5}"
 COOLDOWN_SECONDS="${IP_COOLDOWN_SECONDS:-1800}"
 VALIDATION_URL="${P0_STEP6_URL:-https://httpbin.org/status/503}"
 LOG_FILE="${P0_STEP6_LOG_FILE:-/tmp/p0-step6-valkey-blacklist.log}"
+AUTH_WARNING="Warning: Using a password with '-a' or '-u' option on the command line interface may not be safe."
 
 if [[ -z "${REDIS_URL:-}" ]]; then
   echo "错误：必须设置 REDIS_URL，格式为 redis://<username>:<url-encoded-password>@<host>:<port>/<db>"
@@ -18,6 +19,10 @@ if ! command -v "${VALKEY_CLI_BIN}" >/dev/null 2>&1; then
   echo "错误：未找到 ${VALKEY_CLI_BIN}。Valkey 8.1 环境请先安装 valkey-cli，或通过 VALKEY_CLI 指定路径。"
   exit 2
 fi
+
+run_valkey() {
+  "${VALKEY_CLI_BIN}" -u "${REDIS_URL}" "$@" 2> >(grep -v -F "${AUTH_WARNING}" >&2)
+}
 
 echo "Step 6 Redis/Valkey 黑名单验证"
 echo "Valkey client: ${VALKEY_CLI_BIN}"
@@ -30,7 +35,7 @@ echo "P0_STEP6_LOG_FILE=${LOG_FILE}"
 
 echo
 echo "检查 Valkey 连接："
-"${VALKEY_CLI_BIN}" -u "${REDIS_URL}" ping
+run_valkey ping
 
 SEED_FILE="$(mktemp /tmp/p0-step6-seeds.XXXXXX)"
 printf '%s\n' "${VALIDATION_URL}" > "${SEED_FILE}"
@@ -55,11 +60,11 @@ echo "CONCURRENT_REQUESTS_PER_DOMAIN=${CONCURRENT_REQUESTS_PER_DOMAIN}"
 
 echo
 echo "Valkey 失败计数 key："
-"${VALKEY_CLI_BIN}" -u "${REDIS_URL}" --scan --pattern "${KEY_PREFIX}:fail:*" || true
+run_valkey --scan --pattern "${KEY_PREFIX}:fail:*" || true
 
 echo
 echo "Valkey 黑名单 key："
-mapfile -t BLACKLIST_KEYS < <("${VALKEY_CLI_BIN}" -u "${REDIS_URL}" --scan --pattern "${KEY_PREFIX}:blacklist:*")
+mapfile -t BLACKLIST_KEYS < <(run_valkey --scan --pattern "${KEY_PREFIX}:blacklist:*")
 if [[ "${#BLACKLIST_KEYS[@]}" -eq 0 ]]; then
   echo "未发现黑名单 key。请检查目标是否返回 403/429/503，或确认 IP_FAILURE_THRESHOLD 与 P0_VALIDATION_REPEAT。"
   exit 1
@@ -69,9 +74,9 @@ for key in "${BLACKLIST_KEYS[@]}"; do
   [[ -z "${key}" ]] && continue
   echo "key=${key}"
   echo -n "reason="
-  "${VALKEY_CLI_BIN}" -u "${REDIS_URL}" get "${key}"
+  run_valkey get "${key}"
   echo -n "ttl="
-  "${VALKEY_CLI_BIN}" -u "${REDIS_URL}" ttl "${key}"
+  run_valkey ttl "${key}"
 done
 
 echo

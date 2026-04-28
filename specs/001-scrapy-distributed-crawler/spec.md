@@ -2,7 +2,7 @@
 
 **功能分支**：`001-scrapy-distributed-crawler`
 **创建日期**：2026-04-27
-**状态**：草稿
+**状态**：P0 核心验证已收尾，P1 已拆分到 `specs/002-p1-content-persistence/`
 **输入来源**：`scrapy-distributed-crawler-feature.md`
 
 ## 用户场景与测试
