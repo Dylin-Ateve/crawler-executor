@@ -7,6 +7,7 @@
 - P0 核心验证已完成。
 - 目标节点可以访问 Oracle Cloud Object Storage。
 - 目标节点可以访问 Kafka。
+- Kafka 集群所在子网 / NSG / Security List 需要允许爬虫节点子网到 `TCP 9092` 的入站流量；已验证爬虫节点 `10.0.12.196` 需要 Kafka 侧放通 `10.0.12.0/24` 或更精确的 `/32`。
 - 已确认 Kafka 采用 at-least-once，消费端负责幂等。
 - 下游解析服务暂不纳入 P1。
 
@@ -67,8 +68,8 @@ deploy/scripts/p1-object-storage-smoke.sh
 预期结果：
 
 - 可以写入测试对象。
-- 可以读取测试对象。
-- 可以删除测试对象或将测试对象标记为临时对象。
+- 可以读取测试对象并完成 gzip 解压校验。
+- 测试对象使用 `smoke/p1/` 前缀，P1 不执行删除；后续清理由 P2 或人工运维处理。
 
 ## Step 2：Kafka smoke test
 
@@ -129,8 +130,36 @@ deploy/scripts/run-p1-persistence-validation.sh /tmp/p1-seeds.txt
 
 | 项目 | 目标 | 实测 | 结论 |
 |------|------|------|------|
-| 对象存储写入 | HTML 压缩后可写入并读取 | 待填写 | 待填写 |
-| Kafka metadata 发布 | 内容写入后发布 `page-metadata` | 待填写 | 待填写 |
-| 上传失败保护 | 上传失败不发布 metadata | 待填写 | 待填写 |
-| Kafka 失败记录 | Kafka 故障后记录日志和指标 | 待填写 | 待填写 |
-| 幂等键 | `snapshot_id` 可用于去重 | 待填写 | 待填写 |
+| 对象存储写入 | HTML 压缩后可写入并读取 | 端到端已写入；读取校验脚本已补充，真实 smoke 待执行 | 部分通过 |
+| Kafka metadata 发布 | 内容写入后发布 `page-metadata` | `crawler.page-metadata.v1` smoke 与端到端均通过 | 通过 |
+| 上传失败保护 | 上传失败不发布 metadata | 待执行 | 待验证 |
+| Kafka 失败记录 | Kafka 故障后记录日志和指标 | 待执行 | 待验证 |
+| 幂等键 | `snapshot_id` 可用于去重 | 已生成 `url_hash:fetched_at_ms` 格式 key | 通过 |
+
+## 真实环境验证记录
+
+### 2026-04-28 Kafka smoke test
+
+结果：通过。
+
+```text
+p1_kafka_smoke_ok
+topic=crawler.page-metadata.v1
+key=77d1ac3bdf379bdf4b24601e6bc6c63d0d99c7adeeabc770f040f1106ea4d6dd:1777366991632
+```
+
+网络前置修正：Kafka bootstrap 解析为私网地址 `10.0.4.155`，初始 TCP 连接到 `10.0.4.155:9092` 超时。放通 Kafka 侧 ingress 后验证通过。
+
+### 2026-04-28 P1 端到端抓取验证
+
+结果：通过，基础 producer 链路完成。
+
+```text
+url=https://www.wikipedia.org/
+status=200
+content_type=text/html
+snapshot_id=1868061f6e5b3766a469a034e502180e366f5d73803e56553544d5a3b031f24b:1777367044069
+storage_key=pages/v1/2026/04/28/061bdbf8744ebfcd/1868061f6e5b3766a469a034e502180e366f5d73803e56553544d5a3b031f24b/1868061f6e5b3766a469a034e502180e366f5d73803e56553544d5a3b031f24b:1777367044069.html.gz
+```
+
+限制说明：本次端到端验证未配置 `REDIS_URL`，因此 P0 的 `LocalIpRotationMiddleware` 与 `IpHealthCheckMiddleware` 被禁用，日志中 `local_ip=None`。该结果证明 P1 对象存储与 Kafka producer 链路通过；如需验证 P0+P1 组合链路，需要带上 P0 的 Valkey 和本地出口 IP 配置再跑一次。

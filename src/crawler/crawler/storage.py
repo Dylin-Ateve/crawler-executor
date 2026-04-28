@@ -31,6 +31,9 @@ class ObjectStorageClient(Protocol):
     ) -> StoredObject:
         ...
 
+    def get_object(self, key: str) -> bytes:
+        ...
+
 
 @dataclass(frozen=True)
 class OciObjectStorageConfig:
@@ -105,6 +108,14 @@ class OciObjectStorageClient:
         etag = headers.get("etag") or headers.get("ETag")
         return StoredObject(provider=self.provider, bucket=self.config.bucket, key=key, etag=etag)
 
+    def get_object(self, key: str) -> bytes:
+        try:
+            response = self.client.get_object(self.config.namespace, self.config.bucket, key)
+        except Exception as exc:
+            raise StorageError(f"failed to read object key={key}") from exc
+
+        return _response_body_to_bytes(response)
+
 
 class FakeObjectStorageClient:
     def __init__(self, bucket: str = "fake-bucket", fail_upload: bool = False, provider: str = "oci") -> None:
@@ -131,6 +142,30 @@ class FakeObjectStorageClient:
             "metadata": metadata or {},
         }
         return StoredObject(provider=self.provider, bucket=self.bucket, key=key, etag=f"fake-etag-{len(body)}")
+
+    def get_object(self, key: str) -> bytes:
+        try:
+            return self.objects[key]["body"]
+        except KeyError as exc:
+            raise StorageError(f"fake object not found key={key}") from exc
+
+
+def _response_body_to_bytes(response: object) -> bytes:
+    data = getattr(response, "data", response)
+    if isinstance(data, bytes):
+        return data
+
+    content = getattr(data, "content", None)
+    if isinstance(content, bytes):
+        return content
+
+    read = getattr(data, "read", None)
+    if callable(read):
+        body = read()
+        if isinstance(body, bytes):
+            return body
+
+    raise StorageError("failed to decode object response body")
 
 
 def build_object_storage_client(settings) -> ObjectStorageClient:
