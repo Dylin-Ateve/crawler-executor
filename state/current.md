@@ -3,7 +3,7 @@
 **更新日期**：2026-04-29
 **对应 commit**：待下次合并后回填
 **对照终态**：`.specify/memory/architecture.md`
-**当前阶段**：P0 核心链路已验证；P1 已验证对象存储与第一版 Kafka producer，正在收敛为单一 `crawl_attempt` producer。
+**当前阶段**：P0 核心链路已验证；P1 `crawl_attempt` producer 已通过目标节点 T055 验证。下一阶段准备规划 M2：第六类队列只读消费与多 worker 运行形态。
 
 ## 1. 当前架构快照
 
@@ -17,7 +17,7 @@ Scrapy worker
         +--> Valkey/Redis 短窗口黑名单
         +--> Prometheus 单 worker 指标
         +--> OCI Object Storage gzip HTML 快照
-        +--> Kafka producer（从 page-metadata 调整到 crawl_attempt 中）
+        +--> Kafka crawl_attempt producer
 ```
 
 当前仍是研发验证形态，不是完整终态：
@@ -37,7 +37,7 @@ Scrapy worker
 | Politeness 策略 | 部分完成 | 已忽略 robots.txt，并保留并发、延迟、重试配置；AutoThrottle、UA 随机化和生产调优未完成。 |
 | 分布式调度只读消费 | 未完成 | 尚未接入 scrapy-redis scheduler、跨节点 URL 队列和去重。 |
 | HTML 对象存储 | 完成 P1 切片 | OCI Object Storage 写入、读取、gzip 校验和失败保护已验证；生命周期策略未配置。 |
-| `crawl_attempt` producer | 调整中 | `page-metadata` producer 和失败记录已验证；P1 目标调整为 `crawl_attempt` producer。 |
+| `crawl_attempt` producer | 完成 P1 | 目标节点 T055 验证通过，覆盖 stored / skipped / storage failed / Kafka failure 分支；连接级 fetch failed 事件化待后续补强。 |
 | 第五类事实投影 | 不属于本系统 | PostgreSQL pages/crawl_logs 等由第五类消费端承接，本仓库只保留 producer 契约。 |
 | ClickHouse Host 画像 | 不属于本系统 | 已明确归第五类，当前不在本仓库实现。 |
 | 下游 Python 解析服务 | 不属于本系统 | 第三类订阅事件自取 storage_key，本系统不派发 parse-tasks。 |
@@ -54,7 +54,7 @@ Scrapy worker
 | 更换爬虫框架为 Scrapy | 部分完成 | Scrapy worker、spider、middleware、pipeline 已实现并通过真实节点验证。 |
 | 多出口 IP 轮换 | 部分完成 | P0 Step 5a/5b 验证多本地 IP 与多个公网 EIP。 |
 | 可控 Politeness 策略 | 部分完成 | 支持并发、单域名并发、延迟、重试和 robots 关闭；生产参数未压测。 |
-| 大规模持久化存储 | 部分完成 | HTML 写入对象存储已完成；Kafka producer 正从 `page-metadata` 调整为 `crawl_attempt`。 |
+| 大规模持久化存储 | 部分完成 | HTML 写入对象存储与 `crawl_attempt` producer 已完成；消费端事实投影归第五类。 |
 | Host 画像分析能力 | 不属于本系统 | 画像与事实层归第五类。 |
 | 可运维 K8s 化部署 | 未完成 | 当前仍是目标节点脚本验证，未进入 K8s/IaC。 |
 
@@ -78,7 +78,7 @@ Scrapy worker
 | 健康检查 middleware | 部分完成 | HTTP 失败和黑名单验证完成；captcha/全局策略需扩展。 |
 | UA 随机化 | 未完成 | 尚未接入。 |
 | 重试 | 部分完成 | Scrapy retry 配置已存在；与 IP 切换策略仍需生产化验证。 |
-| 对象存储上传 + Kafka 投递 | 完成 P1 切片 | 已验证 HTML + `page-metadata` producer，正在调整为 `crawl_attempt`。 |
+| 对象存储上传 + Kafka 投递 | 完成 P1 切片 | 已验证 HTML + `crawl_attempt` producer，覆盖成功、跳过、对象存储失败和 Kafka 失败记录。 |
 | scrapy-redis 集成 | 未完成 | 当前不是分布式队列模式。 |
 | Prometheus 指标暴露 | 部分完成 | 单 worker 指标已可用，集群级指标未完成。 |
 

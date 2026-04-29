@@ -159,7 +159,7 @@ HTML object upload success -> crawl_attempt publish with storage_result=stored
 
 ## 消费端投影
 
-P1 第一版已经完成 `page-metadata` producer 链路。按调整后的计划，P1 事件模型应收敛为单一 `crawl_attempt` 事件，而不是分别发布 `crawl_logs` 事件和 `page_snapshots` 事件。
+P1 第一版已经完成 `page-metadata` producer 链路。按调整后的计划，P1 事件模型已收敛为单一 `crawl_attempt` 事件，而不是分别发布 `crawl_logs` 事件和 `page_snapshots` 事件。
 
 设计理由：
 

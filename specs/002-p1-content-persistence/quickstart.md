@@ -148,14 +148,66 @@ deploy/scripts/run-p1-kafka-failure-validation.sh /tmp/p1-seeds.txt
 
 | 项目 | 目标 | 实测 | 结论 |
 |------|------|------|------|
-| 对象存储写入 | HTML 压缩后可写入并读取 | `p1-object-storage-smoke.sh` 写入、读取、gzip 解压校验通过 | 通过 |
-| Kafka attempt 发布 | attempt 完成后发布 `crawl_attempt` | 代码与 smoke 脚本已调整，待目标节点重跑 | 待验证 |
-| 成功快照引用 | 成功 HTML 事件包含可读取 `storage_key` | 脚本已加入 `storage_key` 读取与 gzip 校验，待目标节点重跑 | 待验证 |
-| 上传失败保护 | 上传失败发布 `storage_result=failed` 的 `crawl_attempt` | 脚本已调整为校验 `storage_result=failed`，待目标节点重跑 | 待验证 |
-| Kafka 失败记录 | Kafka 故障后记录日志和指标 | `run-p1-kafka-failure-validation.sh` 通过 | 通过 |
-| 幂等键 | `attempt_id` 用于 attempt 去重，`snapshot_id` 用于成功快照去重 | 代码已调整，待目标节点重跑 | 待验证 |
+| 对象存储写入 | HTML 压缩后可写入并读取 | 2026-04-29 T055：`p1_object_storage_smoke_ok`，key=`smoke/p1/object-storage-smoke-20260429T085147Z.txt.gz` | 通过 |
+| Kafka attempt 发布 | attempt 完成后发布 `crawl_attempt` | 2026-04-29 T055：`p1_kafka_smoke_ok`，topic=`crawler.crawl-attempt.v1`，key 为 `attempt_id` | 通过 |
+| 成功快照引用 | 成功 HTML 事件包含可读取 `storage_key` | 2026-04-29 T055：`storage_result=stored`，`p1_storage_object_verify_ok`，`verified_uncompressed_size=92443` | 通过 |
+| 上传失败保护 | 上传失败发布 `storage_result=failed` 的 `crawl_attempt` | 2026-04-29 T055：`p1_storage_upload_failed` 后发布 `storage_result=failed` | 通过 |
+| Kafka 失败记录 | Kafka 故障后记录日志和指标 | 2026-04-29 T055：`p1_kafka_publish_failed`，对象已写入且可读取 | 通过 |
+| 非 HTML 跳过 | 非 HTML 不写对象存储但发布 skipped attempt | 2026-04-29 skipped 补充验证：favicon 发布 `storage_result=skipped`，reason=`non_html_content` | 通过 |
+| 幂等键 | `attempt_id` 用于 attempt 去重，`snapshot_id` 用于成功快照去重 | 2026-04-29 T055：Kafka key 与日志均使用 `attempt_id`，成功快照含 `snapshot_id` | 通过 |
 
 ## 真实环境验证记录
+
+### 2026-04-29 T055 目标节点验证
+
+结果：通过。
+
+```text
+p1_kafka_smoke_ok
+topic=crawler.crawl-attempt.v1
+key=77d1ac3bdf379bdf4b24601e6bc6c63d0d99c7adeeabc770f040f1106ea4d6dd:attempt:1777452706598
+
+p1_object_storage_smoke_ok
+provider=oci
+bucket=clawer_content_staging
+key=smoke/p1/object-storage-smoke-20260429T085147Z.txt.gz
+etag=c0ae8cc3-3a27-4f9a-9ba9-a4d57f8e34bb
+verified_uncompressed_size=32
+```
+
+成功 HTML 端到端验证：
+
+```text
+p1_crawl_attempt_published url=https://www.wikipedia.org/ attempt_id=1868061f6e5b3766a469a034e502180e366f5d73803e56553544d5a3b031f24b:attempt:1777452708735 storage_result=stored snapshot_id=1868061f6e5b3766a469a034e502180e366f5d73803e56553544d5a3b031f24b:1777452709004 storage_key=pages/v1/2026/04/29/061bdbf8744ebfcd/1868061f6e5b3766a469a034e502180e366f5d73803e56553544d5a3b031f24b/1868061f6e5b3766a469a034e502180e366f5d73803e56553544d5a3b031f24b:1777452709004.html.gz
+p1_storage_object_verify_ok
+verified_uncompressed_size=92443
+```
+
+对象存储失败验证：
+
+```text
+p1_storage_upload_failed url=https://www.wikipedia.org/
+p1_crawl_attempt_published url=https://www.wikipedia.org/ attempt_id=1868061f6e5b3766a469a034e502180e366f5d73803e56553544d5a3b031f24b:attempt:1777452710711 storage_result=failed reason=storage_upload_failed
+Step T037 验证通过：对象存储失败后发布了 storage_result=failed 的 crawl_attempt。
+```
+
+Kafka 失败验证：
+
+```text
+KAFKA_BOOTSTRAP_SERVERS=127.0.0.1:1
+p1_kafka_publish_failed url=https://www.wikipedia.org/ attempt_id=1868061f6e5b3766a469a034e502180e366f5d73803e56553544d5a3b031f24b:attempt:1777452712025 storage_result=stored snapshot_id=1868061f6e5b3766a469a034e502180e366f5d73803e56553544d5a3b031f24b:1777452712297 storage_key=pages/v1/2026/04/29/061bdbf8744ebfcd/1868061f6e5b3766a469a034e502180e366f5d73803e56553544d5a3b031f24b/1868061f6e5b3766a469a034e502180e366f5d73803e56553544d5a3b031f24b:1777452712297.html.gz
+p1_storage_object_verify_ok
+Step T038 验证通过：对象已写入，Kafka 发布失败被记录。
+```
+
+非 HTML skipped 补充验证：
+
+```text
+p1_response_observed url=https://www.wikipedia.org/static/favicon/wikipedia.ico status=200 content_type=image/vnd.microsoft.icon local_ip=None
+p1_crawl_attempt_published url=https://www.wikipedia.org/static/favicon/wikipedia.ico attempt_id=fc4a29e2a31c137b486b2ce484a164660348a57b2f7a066b393a79e903d163d9:attempt:1777452679319 storage_result=skipped reason=non_html_content
+```
+
+限制说明：本次验证未配置 `REDIS_URL`，因此 P0 的 `LocalIpRotationMiddleware` 与 `IpHealthCheckMiddleware` 被禁用，日志中 `local_ip=None`。该结果证明 P1 对象存储与 `crawl_attempt` producer 链路通过；P0+P1 组合链路和多 worker 队列消费仍由后续 spec 验证。
 
 ### 2026-04-28 Kafka smoke test
 
@@ -169,7 +221,7 @@ key=77d1ac3bdf379bdf4b24601e6bc6c63d0d99c7adeeabc770f040f1106ea4d6dd:17773669916
 
 网络前置修正：Kafka bootstrap 解析为私网地址 `10.0.4.155`，初始 TCP 连接到 `10.0.4.155:9092` 超时。放通 Kafka 侧 ingress 后验证通过。
 
-说明：以上为 P1 第一版 `page-metadata` smoke 记录；调整后的 smoke 脚本会输出 `topic=crawler.crawl-attempt.v1`，key 为 `attempt_id`。
+说明：以上为 P1 第一版 `page-metadata` smoke 记录。2026-04-29 T055 已重新验证 `crawler.crawl-attempt.v1`。
 
 ### 2026-04-28 Object Storage smoke test
 
@@ -210,7 +262,7 @@ p1_storage_upload_failed url=https://www.wikipedia.org/ storage_key=pages/v1/202
 Step T037 验证通过：对象存储失败后未发布 page metadata。
 ```
 
-验证说明：以上为 P1 第一版记录。调整后的验证标准为 Scrapy 正常结束，日志出现 `p1_storage_upload_failed`，并发布 `storage_result=failed` 的 `crawl_attempt`。
+验证说明：以上为 P1 第一版记录。2026-04-29 T055 已重新验证上传失败后发布 `storage_result=failed` 的 `crawl_attempt`。
 
 ### 2026-04-28 Kafka 失败验证
 
@@ -223,4 +275,4 @@ p1_kafka_publish_failed url=https://www.wikipedia.org/ snapshot_id=1868061f6e5b3
 Step T038 验证通过：对象已写入，Kafka 发布失败被记录。
 ```
 
-验证说明：以上为 P1 第一版记录。调整后日志会带 `attempt_id` 与 `storage_result=stored`，并且不应出现 `p1_crawl_attempt_published` 成功日志。
+验证说明：以上为 P1 第一版记录。2026-04-29 T055 已重新验证 Kafka 失败日志带 `attempt_id` 与 `storage_result=stored`，且对象已写入并可读取。

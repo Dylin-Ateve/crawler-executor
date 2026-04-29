@@ -123,9 +123,9 @@ deploy/
 | 消息 schema 版本化 | 支持下游消费者兼容演进 | 无版本字段会让后续 schema 调整风险过高 |
 | 对象存储客户端抽象 | 需要通过 `OCI_AUTH_MODE` 支持 API Key 与 Instance Principal 双模式 | 直接在业务 pipeline 中写认证分支会污染业务逻辑并降低可测试性 |
 
-## P1 调整计划：从 page-metadata 到 crawl_attempt
+## P1 调整结果：从 page-metadata 到 crawl_attempt
 
-P1 第一版已验证 `page-metadata` producer。按最新结论，P1 需要调整为单一 `crawl_attempt` producer：
+P1 第一版已验证 `page-metadata` producer。按最新结论，P1 已调整为单一 `crawl_attempt` producer，并通过 2026-04-29 目标节点 T055 验证：
 
 ```text
 fetch_result + content_result + storage_result -> crawl_attempt
@@ -139,11 +139,13 @@ fetch_result + content_result + storage_result -> crawl_attempt
 | `page_snapshots` | 仅当 `storage_result=stored` 且 `snapshot_id/storage_key` 存在 |
 | `pages_latest` | 仅从成功 `page_snapshots` 更新 |
 
-### 待调整实现点
+### 已调整实现点
 
 1. 新增 `attempt_id` 生成逻辑。
 2. 将 payload builder 从 `page-metadata` 扩展为 `crawl_attempt`。
-3. 非 HTML、非 200、fetch failure、storage failure 均发布 `crawl_attempt`，但不写对象存储快照。
+3. 非 HTML、非 200、storage failure 均发布 `crawl_attempt`，但不写对象存储快照。
 4. storage success 时发布 `storage_result=stored`，并携带 `snapshot_id/storage_key/content_sha256`。
 5. Kafka topic 默认改为 `crawler.crawl-attempt.v1`。
 6. 更新验证脚本，验证成功 HTML、非 HTML、storage failure、Kafka failure 四类分支。
+
+连接级 fetch 失败到 `crawl_attempt(fetch_result=failed)` 的事件化路径未纳入 T055，后续随队列只读消费和多 worker 运行形态补强。

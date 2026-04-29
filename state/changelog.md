@@ -24,13 +24,19 @@
 - **关联 spec**：`specs/002-p1-content-persistence/`
 - **关联 ADR**：ADR-0002
 
+### P1：内容可靠持久化与 `crawl_attempt` producer 收口
+
+- **关联 spec**：`specs/002-p1-content-persistence/`
+- **新增能力**：目标节点 T055 验证通过，覆盖 Kafka `crawl_attempt` smoke、OCI Object Storage smoke、成功 HTML `storage_result=stored`、非 HTML `storage_result=skipped`、对象存储失败 `storage_result=failed`、Kafka 发布失败记录与对象保留。
+- **当前状态**：P1 已收口；下一阶段进入 M2：第六类队列只读消费与多 worker 运行形态。
+
 ## 2026-04-27 至 2026-04-29
 
 ### P1：内容可靠持久化与 producer 第一版
 
 - **关联 spec**：`specs/002-p1-content-persistence/`
 - **新增能力**：HTML gzip 写入 OCI Object Storage；对象写入后读取和解压校验；Kafka `page-metadata` producer 第一版；对象存储失败时不发布成功 metadata；Kafka 失败时保留对象并记录失败。
-- **当前状态**：第一版已验证，正在按 ADR-0002 调整为 `crawl_attempt` producer。
+- **当前状态**：已被 2026-04-29 的 `crawl_attempt` producer 收口记录取代。
 
 ### P0：单节点 Scrapy 多出口 IP PoC
 

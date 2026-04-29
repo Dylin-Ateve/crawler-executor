@@ -49,4 +49,4 @@ crawler-executor 是企业级内容生产系统群中的 **第二类：抓取执
 
 ## 当前状态
 
-P0 单节点 Scrapy 多出口 IP PoC 已验证。P1 已验证对象存储与第一版 Kafka producer，当前目标是收敛为单一 `crawl_attempt` producer。
+P0 单节点 Scrapy 多出口 IP PoC 已验证。P1 `crawl_attempt` producer 已通过目标节点 T055 验证，下一阶段准备规划第六类队列只读消费与多 worker 运行形态。
