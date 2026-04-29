@@ -16,6 +16,7 @@ crawler-executor 是企业级内容生产系统群中的 **第二类：抓取执
 6. `state/decisions/README.md`：ADR 索引与模板。
 7. `specs/001-scrapy-distributed-crawler/`：P0 单节点 Scrapy 多出口 IP PoC。
 8. `specs/002-p1-content-persistence/`：P1 内容可靠持久化与 `crawl_attempt` producer。
+9. `specs/003-p2-readonly-scheduler-queue/`：P2 第六类队列只读消费与多 worker 运行形态。
 
 ## 文档分层
 
@@ -49,4 +50,4 @@ crawler-executor 是企业级内容生产系统群中的 **第二类：抓取执
 
 ## 当前状态
 
-P0 单节点 Scrapy 多出口 IP PoC 已验证。P1 `crawl_attempt` producer 已通过目标节点 T055 验证，下一阶段准备规划第六类队列只读消费与多 worker 运行形态。
+P0 单节点 Scrapy 多出口 IP PoC 已验证。P1 `crawl_attempt` producer 已通过目标节点 T055 验证。P2 / 003 正在规划第六类队列只读消费与多 worker 运行形态。

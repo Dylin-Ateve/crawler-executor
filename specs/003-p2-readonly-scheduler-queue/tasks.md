@@ -1,0 +1,78 @@
+# 任务：P2 第六类队列只读消费与多 worker 运行形态
+
+**输入**：`spec.md`、`plan.md`、`research.md`、`data-model.md`、`contracts/`
+**前置条件**：P1 `crawl_attempt` producer 已通过 T055 验证；ADR-0003 已接受。
+
+## 阶段 1：规格与研究
+
+- [x] T001 确认第六类队列协议：Redis Streams consumer group。
+- [x] T002 确认不引入 scrapy-redis 默认 scheduler / dupefilter。
+- [x] T003 确认使用自定义轻量 Redis Streams consumer。
+- [x] T004 固化 `contracts/redis-fetch-command.md` 消息字段。
+
+## 阶段 2：队列消费基础
+
+- [x] T005 在 `src/crawler/crawler/queues.py` 中定义 Fetch Command 数据结构与解析逻辑。
+- [x] T006 在 `src/crawler/crawler/queues.py` 中实现队列 consumer 接口。
+- [x] T007 实现 Redis / Valkey 队列读取逻辑。
+- [x] T008 实现 ack / pending / reclaim 或等价消费确认逻辑。
+- [x] T009 在 `src/crawler/crawler/settings.py` 中增加队列配置。
+- [x] T010 增加无效消息直接丢弃处理，不让 worker 崩溃，并记录日志与指标。
+- [x] T010a 实现基于 `job_id + canonical_url` 的确定性 `attempt_id` 生成逻辑。
+
+## 阶段 3：Scrapy 集成
+
+- [x] T011 新增或改造队列驱动 spider，从 Fetch Command 构造 Scrapy request。
+- [x] T012 将 command 上下文字段映射到 request meta。
+- [x] T012a 将 Fetch Command 的 `canonical_url` 作为 `url_hash` 与 `attempt_id` 输入。
+- [x] T013 确保 outlinks 只统计不 enqueue。
+- [x] T014 复用 P1 pipeline 发布成功 HTML、非 HTML、storage failed 和 Kafka failed 场景。
+- [x] T015 实现 Scrapy errback，将 DNS / TCP / timeout 等连接级失败转为 `crawl_attempt(fetch_result=failed)`。
+- [x] T015a 实现 `crawl_attempt` 发布成功后再 `XACK`。
+- [x] T015b 实现可重试失败不 ack、超过最大投递次数后发布终态失败再 ack。
+- [ ] T015c 实现 SIGTERM 停止读取新消息但不清空 PEL。
+
+## 阶段 4：指标与日志
+
+- [x] T016 增加队列读取成功 / 空队列 / 无效消息 / ack 成功 / ack 失败指标。
+- [x] T017 增加 fetch failed 指标和结构化日志。
+- [ ] T018 增加只读边界验证日志，便于审计 Redis 写入行为。
+
+## 阶段 5：测试
+
+- [x] T019 增加 Fetch Command 解析单元测试。
+- [x] T020 增加无效消息单元测试。
+- [x] T021 增加 request meta 映射测试。
+- [x] T022 增加 fetch failed payload 测试。
+- [x] T023 增加 outlinks 不入队测试。
+- [ ] T024 增加多 worker 消费集成测试。
+- [ ] T025 增加 Redis 只读边界测试。
+- [x] T025a 增加同一 `job_id + canonical_url` 重复投递生成相同 `attempt_id` 的测试。
+
+## 阶段 6：验证脚本与文档
+
+- [x] T026 创建 `deploy/scripts/p2-enqueue-fetch-commands.sh`。
+- [x] T027 创建 `deploy/scripts/run-p2-queue-consumer-validation.sh`。
+- [x] T028 创建 `deploy/scripts/run-p2-multi-worker-validation.sh`。
+- [x] T029 创建 `deploy/scripts/run-p2-readonly-boundary-validation.sh`。
+- [x] T030 创建 `deploy/scripts/run-p2-invalid-command-validation.sh`。
+- [ ] T031 更新 `quickstart.md` 的真实验证记录。
+
+## 阶段 7：P2 退出评审
+
+- [ ] T032 验证单 worker 消费并发布 `crawl_attempt`。
+- [ ] T033 验证多 worker 正常 ack 路径无重复处理。
+- [ ] T034 验证 executor 不写 URL 队列、不 enqueue outlinks。
+- [ ] T035 验证连接级 fetch failed 发布 `crawl_attempt(fetch_result=failed)`。
+- [ ] T036 验证 Kafka 发布失败时不 `XACK`，消息可被 `XAUTOCLAIM` 接管。
+- [ ] T037 验证无效消息被丢弃、记录日志和指标，且不写入本系统 DLQ。
+- [ ] T038 更新 `state/current.md`、`state/roadmap.md`、`state/changelog.md`。
+
+## 依赖与执行顺序
+
+- 阶段 1 阻塞阶段 2。
+- 阶段 2 阻塞阶段 3。
+- 阶段 3 阻塞阶段 5 和真实验证。
+- 阶段 4 可与阶段 3 并行。
+- 阶段 6 在主要实现完成后执行。
+- 阶段 7 是进入 M3 前的门禁。

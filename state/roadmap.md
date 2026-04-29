@@ -23,11 +23,11 @@
 
 ### M2：第六类队列只读消费接入
 
-- **目标**：接入 scrapy-redis / Redis 队列只读消费形态，不在本系统写入新 URL。
-- **状态**：未开始。
-- **依赖 ADR**：ADR-0003 待回补。
-- **对应 spec**：待新建。
-- **验收信号**：多个 worker 可从第六类队列消费；本系统无 Redis 写入新 URL 行为；优先级语义只来自上游参数。
+- **目标**：接入 Redis Streams consumer group 队列只读消费形态，不在本系统写入新 URL。
+- **状态**：规划中。
+- **依赖 ADR**：ADR-0003、ADR-0004、ADR-0005、ADR-0006、ADR-0007。
+- **对应 spec**：`specs/003-p2-readonly-scheduler-queue/`
+- **验收信号**：多个 worker 可通过 `XREADGROUP` 消费第六类 `XADD` 的抓取指令；本系统无 Redis URL 写入行为；同一 `job_id + canonical_url` 重复投递生成相同 `attempt_id`；`crawl_attempt` 发布成功后 `XACK`；优先级语义只来自上游参数。
 
 ### M3：生产部署基础
 
@@ -63,7 +63,7 @@
 ## 3. 未完成关键生产能力
 
 1. 连接级 fetch 失败转换为 `crawl_attempt(fetch_result=failed)` 的事件化路径。
-2. scrapy-redis / Redis 分布式队列只读消费。
+2. Redis Streams consumer group 分布式队列只读消费。
 3. 多 worker 消费同一队列的运行形态验证。
 4. K8s DaemonSet + hostNetwork 部署。
 5. Grafana 基础看板、告警和运维 SOP。
@@ -85,7 +85,7 @@
 
 ## 5. 下一阶段建议
 
-新开 `003` spec，建议聚焦本仓库范围内的“第六类队列只读消费 + 多 worker 运行形态”，避免把第五类消费端 PG 投影误纳入 crawler-executor。
+继续推进 `003` spec，聚焦本仓库范围内的“Redis Streams 第六类队列只读消费 + 多 worker 运行形态”，避免把第五类消费端 PG 投影误纳入 crawler-executor。
 
 003 应同时补强连接级 fetch 失败到 `crawl_attempt(fetch_result=failed)` 的事件化路径，因为队列化运行后该类失败会成为 attempt 事实完整性的关键缺口。
 

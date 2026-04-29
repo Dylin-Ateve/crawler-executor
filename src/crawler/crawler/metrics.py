@@ -29,6 +29,7 @@ class CrawlerMetrics:
             self.storage_uploads_total = _NoopMetric()
             self.kafka_publishes_total = _NoopMetric()
             self.content_skips_total = _NoopMetric()
+            self.fetch_queue_events_total = _NoopMetric()
             return
 
         self.requests_total = Counter(
@@ -58,6 +59,11 @@ class CrawlerMetrics:
             "Total content persistence skips by reason.",
             ["reason"],
         )
+        self.fetch_queue_events_total = Counter(
+            "crawler_fetch_queue_events_total",
+            "Total fetch queue events by result.",
+            ["result"],
+        )
 
     def record_response(self, host: str, status: str, egress_ip: str, duration_seconds: Optional[float]) -> None:
         self.requests_total.labels(host=host, status=status, egress_ip=egress_ip or "unknown").inc()
@@ -78,6 +84,9 @@ class CrawlerMetrics:
 
     def record_content_skip(self, reason: str) -> None:
         self.content_skips_total.labels(reason=reason).inc()
+
+    def record_fetch_queue_event(self, result: str) -> None:
+        self.fetch_queue_events_total.labels(result=result).inc()
 
 
 metrics = CrawlerMetrics()

@@ -8,7 +8,7 @@ from typing import Dict, Iterable, Optional
 from urllib.parse import urljoin, urlsplit
 
 from crawler.attempts import build_attempt_id
-from crawler.contracts.canonical_url import build_canonical_url
+from crawler.contracts.canonical_url import CanonicalUrl, build_canonical_url, canonical_url_hash
 from crawler.metrics import metrics
 from crawler.publisher import CrawlAttemptPublisher, PublishError, build_crawl_attempt_publisher
 from crawler.schemas import CRAWL_ATTEMPT_SCHEMA_VERSION, filter_headers, validate_crawl_attempt
@@ -66,10 +66,27 @@ class ContentPersistencePipeline:
 
         finished_at = item.get("fetched_at_dt") or datetime.now(timezone.utc)
         attempted_at = item.get("attempted_at_dt") or finished_at
-        canonical = build_canonical_url(str(item["url"]))
+        canonical = build_item_canonical_url(item)
         attempt_id = item.get("attempt_id") or build_attempt_id(canonical.url_hash, attempted_at)
         host = canonical_host(canonical.canonical_url)
         outlink_counts = count_outlinks(str(item["url"]), item.get("outlinks") or [])
+
+        if item.get("fetch_failed"):
+            payload = build_crawl_attempt_payload(
+                item=item,
+                canonical_url=canonical.canonical_url,
+                url_hash=canonical.url_hash,
+                attempt_id=str(attempt_id),
+                attempted_at=attempted_at,
+                finished_at=finished_at,
+                fetch_result="failed",
+                content_result="unknown",
+                storage_result="skipped",
+                outlinks_count=0,
+                outlinks_external_count=0,
+                header_allowlist=self.header_allowlist,
+            )
+            return self._publish_attempt(item, payload, "fetch_failed", spider)
 
         status_code = int(item.get("status_code") or 0)
         content_type = str(item.get("content_type") or "")
@@ -197,6 +214,7 @@ class ContentPersistencePipeline:
         item["p1_snapshot_id"] = snapshot_id
         item["p1_attempt_id"] = str(attempt_id)
         item["p1_url_hash"] = canonical.url_hash
+        ack_stream_message(item, spider)
         spider.logger.info(
             "p1_crawl_attempt_published url=%s attempt_id=%s storage_result=stored snapshot_id=%s storage_key=%s",
             item.get("url"),
@@ -230,6 +248,7 @@ class ContentPersistencePipeline:
         item["p1_skip_reason"] = reason
         item["p1_attempt_id"] = payload["attempt_id"]
         item["p1_published"] = True
+        ack_stream_message(item, spider)
         spider.logger.info(
             "p1_crawl_attempt_published url=%s attempt_id=%s storage_result=%s reason=%s",
             item.get("url"),
@@ -345,3 +364,29 @@ def count_outlinks(base_url: str, outlinks: Iterable[str]) -> Dict[str, int]:
 
 def canonical_host(canonical_url: str) -> str:
     return (urlsplit(canonical_url).hostname or "").lower()
+
+
+def build_item_canonical_url(item: Dict[str, object]) -> CanonicalUrl:
+    original_url = str(item["url"])
+    canonical_url = item.get("canonical_url")
+    if canonical_url:
+        canonical = str(canonical_url)
+        return CanonicalUrl(
+            original_url=original_url,
+            canonical_url=canonical,
+            url_hash=str(item.get("url_hash") or canonical_url_hash(canonical)),
+        )
+    return build_canonical_url(original_url)
+
+
+def ack_stream_message(item: Dict[str, object], spider) -> None:
+    consumer = item.get("fetch_queue_consumer")
+    message_id = item.get("stream_message_id")
+    if not consumer or not message_id:
+        return
+    try:
+        consumer.ack(str(message_id))
+        metrics.record_fetch_queue_event("ack")
+    except Exception as exc:
+        metrics.record_fetch_queue_event("ack_failed")
+        spider.logger.error("fetch_queue_ack_failed message_id=%s error=%s", message_id, exc)

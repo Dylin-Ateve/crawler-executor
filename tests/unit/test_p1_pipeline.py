@@ -27,6 +27,9 @@ class DummySpider:
         def info(self, *args):
             self.infos.append(args)
 
+        def warning(self, *args):
+            self.infos.append(args)
+
     def __init__(self):
         self.logger = self.Logger()
 
@@ -142,6 +145,50 @@ def test_pipeline_persists_html_then_publishes_metadata():
     assert payload["storage_result"] == "stored"
     assert payload["outlinks_count"] == 1
     assert payload["outlinks_external_count"] == 1
+
+
+class FakeQueueConsumer:
+    def __init__(self):
+        self.acked = []
+
+    def ack(self, message_id):
+        self.acked.append(message_id)
+
+
+def test_pipeline_fetch_failure_publishes_failed_attempt_and_acks_stream_message():
+    storage = FakeObjectStorageClient()
+    publisher = FakeCrawlAttemptPublisher()
+    pipeline = ContentPersistencePipeline(storage, publisher)
+    spider = DummySpider()
+    consumer = FakeQueueConsumer()
+
+    item = pipeline.process_item(
+        {
+            "p1_candidate": True,
+            "fetch_failed": True,
+            "url": "https://example.com/",
+            "canonical_url": "https://example.com",
+            "url_hash": "100680ad546ce6a577f42f1b8a6b614dc6f7d5b09852c1f235e95b4e2aa9ddc3",
+            "attempt_id": "attempt-1",
+            "attempted_at_dt": datetime(2026, 4, 28, tzinfo=timezone.utc),
+            "fetched_at_dt": datetime(2026, 4, 28, tzinfo=timezone.utc),
+            "error_type": "DNSLookupError",
+            "error_message": "dns failed",
+            "stream_message_id": "1-0",
+            "fetch_queue_consumer": consumer,
+        },
+        spider,
+    )
+
+    assert item["p1_published"] is True
+    assert consumer.acked == ["1-0"]
+    assert storage.objects == {}
+    payload = publisher.messages[0]["payload"]
+    assert payload["fetch_result"] == "failed"
+    assert payload["content_result"] == "unknown"
+    assert payload["storage_result"] == "skipped"
+    assert payload["error_type"] == "DNSLookupError"
+    assert len(publisher.messages) == 1
 
 
 def test_pipeline_skips_non_html_without_storage_but_publishes_attempt():
