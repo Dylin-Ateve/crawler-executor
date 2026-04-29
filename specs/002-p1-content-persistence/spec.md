@@ -3,7 +3,7 @@
 **功能分支**：`002-p1-content-persistence`
 **创建日期**：2026-04-27
 **状态**：草稿
-**输入来源**：`scrapy-distributed-crawler-feature.md`、`specs/001-scrapy-distributed-crawler/p0-validation-report.md`
+**输入来源**：`.specify/memory/product.md`、`.specify/memory/architecture.md`、`specs/001-scrapy-distributed-crawler/p0-validation-report.md`
 
 ## 背景
 

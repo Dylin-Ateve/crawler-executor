@@ -3,7 +3,14 @@
 **功能分支**：`[###-feature-name]`
 **创建日期**：[DATE]
 **状态**：草稿
-**输入来源**：[原始需求或提示]
+**输入来源**：[原始需求或提示；需同时参考 `.specify/memory/product.md`、`.specify/memory/architecture.md`、`state/current.md`、`state/roadmap.md`、`state/decisions/`]
+
+## 定位与边界检查
+
+- **Roadmap 位置**：[对应 `state/roadmap.md` 中的里程碑]
+- **产品门禁**：[说明如何符合 `.specify/memory/product.md`]
+- **已知边界**：[说明不进入本 spec 的职责，尤其是 `.specify/memory/architecture.md` 中的明确不做]
+- **相关 ADR**：[列出会约束本 spec 的已接受 ADR]
 
 ## 用户场景与测试
 

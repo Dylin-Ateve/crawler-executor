@@ -3,7 +3,7 @@
 **功能分支**：`001-scrapy-distributed-crawler`
 **创建日期**：2026-04-27
 **状态**：P0 核心验证已收尾，P1 已拆分到 `specs/002-p1-content-persistence/`
-**输入来源**：`scrapy-distributed-crawler-feature.md`
+**输入来源**：`.specify/memory/product.md`、`.specify/memory/architecture.md`
 
 ## 用户场景与测试
 
@@ -154,7 +154,8 @@ P0 明确不包含生产 Kafka 扇出、PostgreSQL/ClickHouse 持久化、Terraf
 
 ## 澄清记录
 
-- 2026-04-27：基于 `scrapy-distributed-crawler-feature.md` 创建初稿；详细计划前仍有未澄清问题。
+- 2026-04-27：基于旧版 feature 规格创建初稿；详细计划前仍有未澄清问题。
+- 2026-04-29：feature 规格拆分为 `.specify/memory/product.md` 与 `.specify/memory/architecture.md`，本 spec 保持历史 P0 实施细则定位。
 - 2026-04-27：P0 范围按原始实施计划中的单节点 PoC 处理。生产存储、分析、IaC 和多节点发布延后到后续阶段。
 - 2026-04-27：确认 P0 在真实 Linux 爬虫节点运行；目标网卡暂按 `ens3`，但必须可配置；每节点约 44 个辅助 IP 的规模假设继续成立。
 - 2026-04-27：确认 Redis 短暂不可用时以爬虫任务继续执行为优先，使用本地内存 fallback。

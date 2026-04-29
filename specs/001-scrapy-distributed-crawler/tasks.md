@@ -1,6 +1,6 @@
 # 任务：P0 Scrapy 分布式爬虫 PoC
 
-**输入**：`spec.md`、`plan.md`、原始 `scrapy-distributed-crawler-feature.md`
+**输入**：`spec.md`、`plan.md`、`.specify/memory/product.md`、`.specify/memory/architecture.md`
 **范围**：仅覆盖 P0 单节点 PoC
 
 ## 阶段 1：P0 初始化

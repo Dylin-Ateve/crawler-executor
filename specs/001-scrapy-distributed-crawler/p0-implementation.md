@@ -2,7 +2,7 @@
 
 ## 目标
 
-验证 `scrapy-distributed-crawler-feature.md` 中风险最高的架构假设：单个爬虫节点上的 Scrapy worker 可以可靠地使用多个本地辅助 IP 作为出站源地址，并能自动冷却异常的 Host/IP 组合。
+验证 `.specify/memory/architecture.md` 中风险最高的架构假设：单个爬虫节点上的 Scrapy worker 可以可靠地使用多个本地辅助 IP 作为出站源地址，并能自动冷却异常的 Host/IP 组合。
 
 ## P0 范围内
 
