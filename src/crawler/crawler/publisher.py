@@ -19,17 +19,17 @@ class PublishError(RuntimeError):
     pass
 
 
-class PageMetadataPublisher(Protocol):
+class CrawlAttemptPublisher(Protocol):
     topic: str
 
-    def publish_page_metadata(self, key: str, payload: Dict[str, object]) -> None:
+    def publish_crawl_attempt(self, key: str, payload: Dict[str, object]) -> None:
         ...
 
 
 @dataclass(frozen=True)
 class KafkaPublisherConfig:
     bootstrap_servers: str
-    topic_page_metadata: str
+    topic: str
     security_protocol: str = "SASL_SSL"
     sasl_mechanism: str = "SCRAM-SHA-512"
     username: str = ""
@@ -42,10 +42,10 @@ class KafkaPublisherConfig:
     flush_timeout_ms: int = 130000
 
 
-class ConfluentKafkaPageMetadataPublisher:
+class ConfluentKafkaCrawlAttemptPublisher:
     def __init__(self, config: KafkaPublisherConfig, producer: Optional[object] = None) -> None:
         self.config = config
-        self.topic = config.topic_page_metadata
+        self.topic = config.topic
         self.producer = producer or self._build_producer(config)
 
     @staticmethod
@@ -75,7 +75,7 @@ class ConfluentKafkaPageMetadataPublisher:
         }
         return Producer(producer_config)
 
-    def publish_page_metadata(self, key: str, payload: Dict[str, object]) -> None:
+    def publish_crawl_attempt(self, key: str, payload: Dict[str, object]) -> None:
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
         delivery_errors: List[BaseException] = []
 
@@ -87,29 +87,40 @@ class ConfluentKafkaPageMetadataPublisher:
             self.producer.produce(self.topic, key=key.encode("utf-8"), value=encoded, on_delivery=on_delivery)
             pending = self.producer.flush(configured_flush_timeout_seconds(self.config))
         except Exception as exc:
-            raise PublishError(f"failed to publish page metadata key={key}") from exc
+            raise PublishError(f"failed to publish crawl attempt key={key}") from exc
 
         if delivery_errors:
-            raise PublishError(f"failed to publish page metadata key={key}") from delivery_errors[0]
+            raise PublishError(f"failed to publish crawl attempt key={key}") from delivery_errors[0]
         if pending:
             try:
                 self.producer.purge()
                 self.producer.flush(1.0)
             except Exception:
                 pass
-            raise PublishError(f"failed to publish page metadata key={key}: flush timeout with {pending} pending message(s)")
+            raise PublishError(f"failed to publish crawl attempt key={key}: flush timeout with {pending} pending message(s)")
+
+    def publish_page_metadata(self, key: str, payload: Dict[str, object]) -> None:
+        self.publish_crawl_attempt(key, payload)
 
 
-class FakePageMetadataPublisher:
-    def __init__(self, topic: str = "crawler.page-metadata.v1", fail_publish: bool = False) -> None:
+class FakeCrawlAttemptPublisher:
+    def __init__(self, topic: str = "crawler.crawl-attempt.v1", fail_publish: bool = False) -> None:
         self.topic = topic
         self.fail_publish = fail_publish
         self.messages: List[Dict[str, object]] = []
 
-    def publish_page_metadata(self, key: str, payload: Dict[str, object]) -> None:
+    def publish_crawl_attempt(self, key: str, payload: Dict[str, object]) -> None:
         if self.fail_publish:
             raise PublishError(f"fake publish failure key={key}")
         self.messages.append({"topic": self.topic, "key": key, "payload": payload})
+
+    def publish_page_metadata(self, key: str, payload: Dict[str, object]) -> None:
+        self.publish_crawl_attempt(key, payload)
+
+
+PageMetadataPublisher = CrawlAttemptPublisher
+ConfluentKafkaPageMetadataPublisher = ConfluentKafkaCrawlAttemptPublisher
+FakePageMetadataPublisher = FakeCrawlAttemptPublisher
 
 
 def resolve_ssl_ca_location(configured_path: str) -> str:
@@ -128,10 +139,10 @@ def configured_flush_timeout_seconds(config: KafkaPublisherConfig) -> float:
     return max(timeout_ms / 1000.0, 1.0)
 
 
-def build_page_metadata_publisher(settings) -> PageMetadataPublisher:
+def build_crawl_attempt_publisher(settings) -> CrawlAttemptPublisher:
     config = KafkaPublisherConfig(
         bootstrap_servers=settings.get("KAFKA_BOOTSTRAP_SERVERS"),
-        topic_page_metadata=settings.get("KAFKA_TOPIC_PAGE_METADATA", "crawler.page-metadata.v1"),
+        topic=settings.get("KAFKA_TOPIC_CRAWL_ATTEMPT", "crawler.crawl-attempt.v1"),
         security_protocol=settings.get("KAFKA_SECURITY_PROTOCOL", "SASL_SSL"),
         sasl_mechanism=settings.get("KAFKA_SASL_MECHANISM", "SCRAM-SHA-512"),
         username=settings.get("KAFKA_USERNAME", ""),
@@ -143,4 +154,8 @@ def build_page_metadata_publisher(settings) -> PageMetadataPublisher:
         delivery_timeout_ms=settings.getint("KAFKA_DELIVERY_TIMEOUT_MS", 120000),
         flush_timeout_ms=settings.getint("KAFKA_FLUSH_TIMEOUT_MS", 130000),
     )
-    return ConfluentKafkaPageMetadataPublisher(config)
+    return ConfluentKafkaCrawlAttemptPublisher(config)
+
+
+def build_page_metadata_publisher(settings) -> CrawlAttemptPublisher:
+    return build_crawl_attempt_publisher(settings)

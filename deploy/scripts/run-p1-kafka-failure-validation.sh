@@ -46,7 +46,7 @@ if ! grep -q "p1_kafka_publish_failed" "${LOG_FILE}"; then
   exit 1
 fi
 
-if grep -q "p1_page_metadata_published" "${LOG_FILE}"; then
+if grep -q "p1_crawl_attempt_published" "${LOG_FILE}"; then
   echo "Step T038 验证失败：Kafka 失败场景仍出现发布成功日志。"
   exit 1
 fi

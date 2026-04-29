@@ -6,6 +6,9 @@ from typing import Iterable, Iterator, List
 
 import scrapy
 
+from crawler.attempts import build_attempt_id
+from crawler.contracts.canonical_url import build_canonical_url
+
 
 class ContentPersistenceSpider(scrapy.Spider):
     name = "content_persistence"
@@ -33,6 +36,8 @@ class ContentPersistenceSpider(scrapy.Spider):
                 if self.max_pages and self.seen_pages >= self.max_pages:
                     return
                 self.seen_pages += 1
+                attempted_at = datetime.now(timezone.utc)
+                canonical = build_canonical_url(url)
                 yield scrapy.Request(
                     url=url,
                     callback=self.parse,
@@ -40,6 +45,8 @@ class ContentPersistenceSpider(scrapy.Spider):
                     meta={
                         "p1_candidate": True,
                         "handle_httpstatus_all": True,
+                        "attempt_id": build_attempt_id(canonical.url_hash, attempted_at),
+                        "attempted_at_dt": attempted_at,
                     },
                 )
 
@@ -55,6 +62,8 @@ class ContentPersistenceSpider(scrapy.Spider):
             "outlinks": response.css("a::attr(href)").getall() if self._is_html(content_type) else [],
             "egress_local_ip": response.meta.get("egress_local_ip"),
             "observed_egress_ip": None,
+            "attempt_id": response.meta.get("attempt_id"),
+            "attempted_at_dt": response.meta.get("attempted_at_dt"),
             "fetched_at_dt": datetime.now(timezone.utc),
         }
         self.logger.info(

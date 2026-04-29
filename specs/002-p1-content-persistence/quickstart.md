@@ -1,4 +1,4 @@
-# 快速开始：P1 抓取内容可靠持久化与元数据投递
+# 快速开始：P1 抓取内容可靠持久化与 crawl_attempt 投递
 
 本文档定义 P1 的预期验证流程。P1 依赖 P0 已验证的 Scrapy worker、出口 IP middleware、Valkey 黑名单和 Prometheus 指标。
 
@@ -31,7 +31,8 @@
 | `KAFKA_PASSWORD` | Kafka 密码 | 环境变量注入 |
 | `KAFKA_SSL_CA_LOCATION` | Kafka CA 路径 | `/etc/pki/tls/certs/ca-bundle.crt` |
 | `KAFKA_BATCH_SIZE` | Kafka batch size | `100` |
-| `KAFKA_TOPIC_PAGE_METADATA` | 页面元数据 topic | `crawler.page-metadata.v1` |
+| `KAFKA_TOPIC_CRAWL_ATTEMPT` | 抓取 attempt topic | `crawler.crawl-attempt.v1` |
+| `KAFKA_TOPIC_PAGE_METADATA` | P1 第一版已验证 topic，兼容参考 | `crawler.page-metadata.v1` |
 | `KAFKA_FLUSH_TIMEOUT_MS` | Kafka 单次 publish flush 上限 | `130000` |
 
 ## Step 0：确认配置
@@ -53,7 +54,7 @@ export KAFKA_USERNAME="<ENV_VAR_REFERENCE>"
 export KAFKA_PASSWORD="<ENV_VAR_REFERENCE>"
 export KAFKA_SSL_CA_LOCATION="/etc/pki/tls/certs/ca-bundle.crt"
 export KAFKA_BATCH_SIZE="100"
-export KAFKA_TOPIC_PAGE_METADATA="crawler.page-metadata.v1"
+export KAFKA_TOPIC_CRAWL_ATTEMPT="crawler.crawl-attempt.v1"
 export KAFKA_FLUSH_TIMEOUT_MS="130000"
 ```
 
@@ -84,8 +85,9 @@ deploy/scripts/p1-kafka-smoke.sh
 
 预期结果：
 
-- `page-metadata` topic 可写入测试消息。
-- 消息 key 与 schema_version 可被消费端读取。
+- `crawl_attempt` topic 可写入测试消息。
+- 消息 key 为 `attempt_id`。
+- 消息中包含 `fetch_result`、`content_result`、`storage_result`。
 
 ## Step 3：端到端抓取验证
 
@@ -106,9 +108,10 @@ deploy/scripts/run-p1-persistence-validation.sh /tmp/p1-seeds.txt
 预期结果：
 
 - 对象存储中存在压缩 HTML。
-- `page-metadata` Kafka 消息引用的 `storage_key` 可读取。
+- `crawl_attempt` Kafka 消息引用的 `storage_key` 可读取。
+- 成功 HTML 分支应满足 `fetch_result=succeeded`、`content_result=html_snapshot_candidate`、`storage_result=stored`。
 - `content_sha256` 与未压缩内容一致。
-- 非 HTML 资源不会写对象存储，也不会发布 Kafka 消息。
+- 非 HTML 资源不会写对象存储，但会发布 `crawl_attempt`，且 `storage_result=skipped`。
 
 ## Step 4：对象存储失败验证
 
@@ -120,9 +123,11 @@ deploy/scripts/run-p1-storage-failure-validation.sh /tmp/p1-seeds.txt
 
 预期结果：
 
-- 不发布 `page-metadata`。
+- 发布 `crawl_attempt`。
+- `storage_result=failed`。
+- 不携带可用 `snapshot_id/storage_key` 快照语义。
 - 日志和指标包含失败原因。
-- 脚本输出 `Step T037 验证通过：对象存储失败后未发布 page metadata。`
+- 消费端不应从该事件投影 `page_snapshots`。
 
 ## Step 5：Kafka 失败记录验证
 
@@ -144,10 +149,11 @@ deploy/scripts/run-p1-kafka-failure-validation.sh /tmp/p1-seeds.txt
 | 项目 | 目标 | 实测 | 结论 |
 |------|------|------|------|
 | 对象存储写入 | HTML 压缩后可写入并读取 | `p1-object-storage-smoke.sh` 写入、读取、gzip 解压校验通过 | 通过 |
-| Kafka metadata 发布 | 内容写入后发布 `page-metadata` | `crawler.page-metadata.v1` smoke 与端到端均通过 | 通过 |
-| 上传失败保护 | 上传失败不发布 metadata | `run-p1-storage-failure-validation.sh` 通过 | 通过 |
+| Kafka attempt 发布 | attempt 完成后发布 `crawl_attempt` | 代码与 smoke 脚本已调整，待目标节点重跑 | 待验证 |
+| 成功快照引用 | 成功 HTML 事件包含可读取 `storage_key` | 脚本已加入 `storage_key` 读取与 gzip 校验，待目标节点重跑 | 待验证 |
+| 上传失败保护 | 上传失败发布 `storage_result=failed` 的 `crawl_attempt` | 脚本已调整为校验 `storage_result=failed`，待目标节点重跑 | 待验证 |
 | Kafka 失败记录 | Kafka 故障后记录日志和指标 | `run-p1-kafka-failure-validation.sh` 通过 | 通过 |
-| 幂等键 | `snapshot_id` 可用于去重 | 已生成 `url_hash:fetched_at_ms` 格式 key | 通过 |
+| 幂等键 | `attempt_id` 用于 attempt 去重，`snapshot_id` 用于成功快照去重 | 代码已调整，待目标节点重跑 | 待验证 |
 
 ## 真实环境验证记录
 
@@ -162,6 +168,8 @@ key=77d1ac3bdf379bdf4b24601e6bc6c63d0d99c7adeeabc770f040f1106ea4d6dd:17773669916
 ```
 
 网络前置修正：Kafka bootstrap 解析为私网地址 `10.0.4.155`，初始 TCP 连接到 `10.0.4.155:9092` 超时。放通 Kafka 侧 ingress 后验证通过。
+
+说明：以上为 P1 第一版 `page-metadata` smoke 记录；调整后的 smoke 脚本会输出 `topic=crawler.crawl-attempt.v1`，key 为 `attempt_id`。
 
 ### 2026-04-28 Object Storage smoke test
 
@@ -202,7 +210,7 @@ p1_storage_upload_failed url=https://www.wikipedia.org/ storage_key=pages/v1/202
 Step T037 验证通过：对象存储失败后未发布 page metadata。
 ```
 
-验证说明：Scrapy 正常结束，日志出现 `p1_storage_upload_failed`，未出现 `p1_page_metadata_published`。
+验证说明：以上为 P1 第一版记录。调整后的验证标准为 Scrapy 正常结束，日志出现 `p1_storage_upload_failed`，并发布 `storage_result=failed` 的 `crawl_attempt`。
 
 ### 2026-04-28 Kafka 失败验证
 
@@ -215,4 +223,4 @@ p1_kafka_publish_failed url=https://www.wikipedia.org/ snapshot_id=1868061f6e5b3
 Step T038 验证通过：对象已写入，Kafka 发布失败被记录。
 ```
 
-验证说明：对象存储未失败，Kafka broker 不可达时记录 `p1_kafka_publish_failed`，未出现 `p1_page_metadata_published`。
+验证说明：以上为 P1 第一版记录。调整后日志会带 `attempt_id` 与 `storage_result=stored`，并且不应出现 `p1_crawl_attempt_published` 成功日志。

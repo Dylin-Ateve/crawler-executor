@@ -4,14 +4,14 @@ from datetime import datetime, timezone
 
 from crawler.pipelines import (
     ContentPersistencePipeline,
+    build_crawl_attempt_payload,
     build_content_artifact,
-    build_page_metadata_payload,
     build_snapshot_id,
     build_storage_key,
     count_outlinks,
 )
-from crawler.publisher import FakePageMetadataPublisher
-from crawler.schemas import PAGE_METADATA_SCHEMA_VERSION, SchemaValidationError, validate_page_metadata
+from crawler.publisher import FakeCrawlAttemptPublisher
+from crawler.schemas import CRAWL_ATTEMPT_SCHEMA_VERSION, SchemaValidationError, validate_crawl_attempt
 from crawler.storage import FakeObjectStorageClient
 
 
@@ -62,9 +62,9 @@ def test_count_outlinks_tracks_external_links():
     assert counts == {"total": 3, "external": 1}
 
 
-def test_page_metadata_schema_validation_accepts_valid_payload():
+def test_crawl_attempt_schema_validation_accepts_valid_payload():
     artifact = build_content_artifact(b"<html>ok</html>")
-    payload = build_page_metadata_payload(
+    payload = build_crawl_attempt_payload(
         item={
             "url": "https://example.com/",
             "status_code": 200,
@@ -73,8 +73,13 @@ def test_page_metadata_schema_validation_accepts_valid_payload():
         },
         canonical_url="https://example.com",
         url_hash="b" * 64,
+        attempt_id="b" * 64 + ":attempt:1777334400000",
+        attempted_at=datetime(2026, 4, 28, tzinfo=timezone.utc),
+        finished_at=datetime(2026, 4, 28, tzinfo=timezone.utc),
+        fetch_result="succeeded",
+        content_result="html_snapshot_candidate",
+        storage_result="stored",
         snapshot_id="b" * 64 + ":1777334400000",
-        fetched_at=datetime(2026, 4, 28, tzinfo=timezone.utc),
         artifact=artifact,
         storage_provider="oci",
         bucket="bucket",
@@ -85,23 +90,25 @@ def test_page_metadata_schema_validation_accepts_valid_payload():
         header_allowlist=("content-type",),
     )
 
-    validate_page_metadata(payload)
-    assert payload["schema_version"] == PAGE_METADATA_SCHEMA_VERSION
+    validate_crawl_attempt(payload)
+    assert payload["schema_version"] == CRAWL_ATTEMPT_SCHEMA_VERSION
+    assert payload["attempt_id"] == "b" * 64 + ":attempt:1777334400000"
+    assert payload["storage_result"] == "stored"
     assert payload["response_headers"] == {"content-type": "text/html"}
 
 
-def test_page_metadata_schema_rejects_missing_required_field():
+def test_crawl_attempt_schema_rejects_missing_required_field():
     try:
-        validate_page_metadata({"schema_version": PAGE_METADATA_SCHEMA_VERSION})
+        validate_crawl_attempt({"schema_version": CRAWL_ATTEMPT_SCHEMA_VERSION})
     except SchemaValidationError as exc:
-        assert "missing required fields" in str(exc)
+        assert "crawl attempt missing required fields" in str(exc)
     else:
         raise AssertionError("expected schema validation failure")
 
 
 def test_pipeline_persists_html_then_publishes_metadata():
     storage = FakeObjectStorageClient(bucket="clawer_content_staging")
-    publisher = FakePageMetadataPublisher()
+    publisher = FakeCrawlAttemptPublisher()
     pipeline = ContentPersistencePipeline(storage, publisher)
     spider = DummySpider()
 
@@ -115,6 +122,8 @@ def test_pipeline_persists_html_then_publishes_metadata():
             "body": b"<html><a href='https://external.example/'>x</a></html>",
             "outlinks": ["https://external.example/"],
             "fetched_at_dt": datetime(2026, 4, 28, tzinfo=timezone.utc),
+            "attempted_at_dt": datetime(2026, 4, 28, tzinfo=timezone.utc),
+            "attempt_id": "attempt-1",
             "egress_local_ip": "10.0.0.2",
         },
         spider,
@@ -129,13 +138,15 @@ def test_pipeline_persists_html_then_publishes_metadata():
     assert stored_object["metadata"]["compression"] == "gzip"
     payload = publisher.messages[0]["payload"]
     assert payload["bucket"] == "clawer_content_staging"
+    assert payload["attempt_id"] == "attempt-1"
+    assert payload["storage_result"] == "stored"
     assert payload["outlinks_count"] == 1
     assert payload["outlinks_external_count"] == 1
 
 
-def test_pipeline_skips_non_html_without_storage_or_kafka():
+def test_pipeline_skips_non_html_without_storage_but_publishes_attempt():
     storage = FakeObjectStorageClient()
-    publisher = FakePageMetadataPublisher()
+    publisher = FakeCrawlAttemptPublisher()
     pipeline = ContentPersistencePipeline(storage, publisher)
     spider = DummySpider()
 
@@ -151,14 +162,18 @@ def test_pipeline_skips_non_html_without_storage_or_kafka():
     )
 
     assert item["p1_persisted"] is False
+    assert item["p1_published"] is True
     assert item["p1_skip_reason"] == "non_html_content"
     assert storage.objects == {}
-    assert publisher.messages == []
+    assert len(publisher.messages) == 1
+    payload = publisher.messages[0]["payload"]
+    assert payload["storage_result"] == "skipped"
+    assert payload["content_result"] == "non_snapshot"
 
 
-def test_pipeline_upload_failure_does_not_publish_metadata():
+def test_pipeline_upload_failure_publishes_failed_attempt():
     storage = FakeObjectStorageClient(fail_upload=True)
-    publisher = FakePageMetadataPublisher()
+    publisher = FakeCrawlAttemptPublisher()
     pipeline = ContentPersistencePipeline(storage, publisher)
     spider = DummySpider()
 
@@ -174,13 +189,18 @@ def test_pipeline_upload_failure_does_not_publish_metadata():
     )
 
     assert item["p1_persisted"] is False
+    assert item["p1_published"] is True
     assert item["p1_skip_reason"] == "storage_upload_failed"
-    assert publisher.messages == []
+    assert len(publisher.messages) == 1
+    payload = publisher.messages[0]["payload"]
+    assert payload["storage_result"] == "failed"
+    assert payload["snapshot_id"] is None
+    assert payload["storage_key"] is None
 
 
 def test_pipeline_publish_failure_keeps_storage_result():
     storage = FakeObjectStorageClient()
-    publisher = FakePageMetadataPublisher(fail_publish=True)
+    publisher = FakeCrawlAttemptPublisher(fail_publish=True)
     pipeline = ContentPersistencePipeline(storage, publisher)
     spider = DummySpider()
 

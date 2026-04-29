@@ -1,7 +1,7 @@
 from crawler import publisher
 from crawler.publisher import (
     DEFAULT_SSL_CA_LOCATION,
-    ConfluentKafkaPageMetadataPublisher,
+    ConfluentKafkaCrawlAttemptPublisher,
     KafkaPublisherConfig,
     PublishError,
     configured_flush_timeout_seconds,
@@ -57,38 +57,38 @@ def test_resolve_ssl_ca_location_uses_default_when_unset_and_no_file_exists(monk
 def test_configured_flush_timeout_seconds_uses_flush_timeout_ms():
     config = KafkaPublisherConfig(
         bootstrap_servers="localhost:9092",
-        topic_page_metadata="topic",
+        topic="topic",
         flush_timeout_ms=8000,
     )
 
     assert configured_flush_timeout_seconds(config) == 8.0
 
 
-def test_publish_page_metadata_uses_bounded_flush_timeout():
+def test_publish_crawl_attempt_uses_bounded_flush_timeout():
     config = KafkaPublisherConfig(
         bootstrap_servers="localhost:9092",
-        topic_page_metadata="topic",
+        topic="topic",
         flush_timeout_ms=8000,
     )
     producer = StubProducer()
-    publisher_client = ConfluentKafkaPageMetadataPublisher(config, producer=producer)
+    publisher_client = ConfluentKafkaCrawlAttemptPublisher(config, producer=producer)
 
-    publisher_client.publish_page_metadata("key", {"ok": True})
+    publisher_client.publish_crawl_attempt("key", {"ok": True})
 
     assert producer.flush_timeout == 8.0
 
 
-def test_publish_page_metadata_raises_when_flush_leaves_pending_messages():
+def test_publish_crawl_attempt_raises_when_flush_leaves_pending_messages():
     config = KafkaPublisherConfig(
         bootstrap_servers="localhost:9092",
-        topic_page_metadata="topic",
+        topic="topic",
         flush_timeout_ms=8000,
     )
     producer = StubProducer(flush_result=1)
-    publisher_client = ConfluentKafkaPageMetadataPublisher(config, producer=producer)
+    publisher_client = ConfluentKafkaCrawlAttemptPublisher(config, producer=producer)
 
     try:
-        publisher_client.publish_page_metadata("key", {"ok": True})
+        publisher_client.publish_crawl_attempt("key", {"ok": True})
     except PublishError as exc:
         assert "flush timeout" in str(exc)
     else:

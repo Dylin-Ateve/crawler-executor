@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "crawler.crawl-attempt.v1",
+  "title": "Crawler Crawl Attempt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "attempt_id",
+    "url_hash",
+    "canonical_url",
+    "original_url",
+    "host",
+    "attempted_at",
+    "finished_at",
+    "fetch_result",
+    "content_result",
+    "storage_result"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "attempt_id": { "type": "string", "minLength": 1 },
+    "snapshot_id": { "type": ["string", "null"] },
+    "url_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "canonical_url": { "type": "string", "format": "uri" },
+    "original_url": { "type": "string", "format": "uri" },
+    "host": { "type": "string", "minLength": 1 },
+    "attempted_at": { "type": "string", "format": "date-time" },
+    "finished_at": { "type": "string", "format": "date-time" },
+    "fetch_result": { "enum": ["succeeded", "failed"] },
+    "status_code": { "type": ["integer", "null"], "minimum": 100, "maximum": 599 },
+    "content_type": { "type": ["string", "null"] },
+    "response_headers": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "response_time_ms": { "type": ["integer", "null"], "minimum": 0 },
+    "bytes_downloaded": { "type": ["integer", "null"], "minimum": 0 },
+    "error_type": { "type": ["string", "null"] },
+    "error_message": { "type": ["string", "null"] },
+    "content_result": {
+      "enum": ["html_snapshot_candidate", "non_snapshot", "unknown"]
+    },
+    "outlinks_count": { "type": "integer", "minimum": 0 },
+    "outlinks_external_count": { "type": "integer", "minimum": 0 },
+    "storage_result": { "enum": ["stored", "failed", "skipped"] },
+    "storage_provider": { "type": ["string", "null"], "enum": ["oci", null] },
+    "bucket": { "type": ["string", "null"] },
+    "storage_key": { "type": ["string", "null"] },
+    "storage_etag": { "type": ["string", "null"] },
+    "compression": { "type": ["string", "null"], "enum": ["gzip", null] },
+    "content_sha256": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
+    "uncompressed_size": { "type": ["integer", "null"], "minimum": 0 },
+    "compressed_size": { "type": ["integer", "null"], "minimum": 0 },
+    "egress_local_ip": { "type": ["string", "null"] },
+    "observed_egress_ip": { "type": ["string", "null"] }
+  }
+}

@@ -35,9 +35,14 @@ if ! grep -q "p1_storage_upload_failed" "${LOG_FILE}"; then
   exit 1
 fi
 
-if grep -q "p1_page_metadata_published" "${LOG_FILE}"; then
-  echo "Step T037 验证失败：对象存储失败后仍发布了 page metadata。"
+if ! grep -q "storage_result=failed" "${LOG_FILE}"; then
+  echo "Step T037 验证失败：对象存储失败后未发布 storage_result=failed 的 crawl_attempt。"
   exit 1
 fi
 
-echo "Step T037 验证通过：对象存储失败后未发布 page metadata。"
+if grep -q "storage_result=stored" "${LOG_FILE}"; then
+  echo "Step T037 验证失败：对象存储失败后仍出现 storage_result=stored。"
+  exit 1
+fi
+
+echo "Step T037 验证通过：对象存储失败后发布了 storage_result=failed 的 crawl_attempt。"

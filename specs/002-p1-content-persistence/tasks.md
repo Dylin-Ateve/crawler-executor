@@ -1,7 +1,9 @@
-# 任务：P1 抓取内容可靠持久化与元数据投递
+# 任务：P1 抓取内容可靠持久化与 crawl_attempt 投递
 
 **输入**：`spec.md`、`plan.md`、P0 验证收尾报告
 **范围**：对象存储、Kafka producer、schema 与验证脚本
+
+说明：T001-T039 记录 P1 第一版 `page-metadata` producer 的完成情况。基于 2026-04-29 的设计结论，P1 目标调整为单一 `crawl_attempt` producer，新增 T040-T055 作为本轮调整任务。
 
 ## 阶段 1：规格与契约
 
@@ -62,6 +64,27 @@
 - [x] T038 验证 Kafka 故障会记录发布失败日志和指标。
 - [x] T039 决定是否进入 PostgreSQL/ClickHouse 消费者或 P2 编排部署。
 
+## 阶段 7：crawl_attempt 契约调整
+
+- [x] T040 定义 `crawl-attempt.schema.json` 契约草案。
+- [x] T041 更新 `data-flow.md`，将 producer flow 从 `page-metadata` 调整为 `crawl_attempt`。
+- [x] T042 更新 `data-model.md`，定义 `crawl_attempt` 与 `crawl_logs/page_snapshots/pages_latest` 投影关系。
+- [x] T043 更新 `spec.md`、`plan.md`、`contracts/README.md` 和 `quickstart.md` 的目标语义。
+- [x] T044 在代码中新增 `attempt_id` 生成逻辑。
+- [x] T044a 确保 Scrapy 内部 retry 复用同一个 `attempt_id`。
+- [x] T045 将 payload builder 从 `page-metadata` 调整为 `crawl_attempt`。
+- [x] T046 增加 `fetch_result/content_result/storage_result` 字段生成逻辑。
+- [x] T047 调整 Kafka 默认 topic 为 `crawler.crawl-attempt.v1`。
+- [x] T048 成功 HTML 分支发布 `storage_result=stored` 的 `crawl_attempt`。
+- [x] T049 非 HTML/非 200 分支发布 `storage_result=skipped` 的 `crawl_attempt`。
+- [x] T050 对象存储失败分支发布 `storage_result=failed` 的 `crawl_attempt`。
+- [x] T051 Kafka smoke 脚本调整为验证 `crawl_attempt`。
+- [x] T052 端到端验证脚本调整为校验 `crawl_attempt.storage_key` 可读取。
+- [x] T053 对象存储失败验证脚本调整为校验 `storage_result=failed`。
+- [x] T054 补充 `crawl_attempt` schema 和 pipeline 单元测试。
+- [x] T054a 增加 P1 T055 目标节点聚合验证脚本。
+- [ ] T055 在目标节点重新执行 P1 调整后验证。
+
 ## 依赖与执行顺序
 
 - 阶段 1 阻塞阶段 2。
@@ -69,3 +92,4 @@
 - 阶段 3 阻塞真实端到端验证。
 - 阶段 4 可随阶段 2/3 并行补充。
 - 阶段 6 是进入下一阶段前的 P1 门禁。
+- 阶段 7 是 P1 事件模型调整门禁；T044-T055 完成前，`002` 的最终目标仍未重新验证。
