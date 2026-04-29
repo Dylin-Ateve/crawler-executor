@@ -3,12 +3,15 @@
 **更新日期**：2026-04-29
 **对应 commit**：待下次合并后回填
 **对照终态**：`.specify/memory/architecture.md`
-**当前阶段**：P0 核心链路已验证；P1 `crawl_attempt` producer 已通过目标节点 T055 验证。M2 已进入 `specs/003-p2-readonly-scheduler-queue/` 规划。
+**当前阶段**：P0 核心链路已验证；P1 `crawl_attempt` producer 已通过目标节点 T055 验证。M2 `specs/003-p2-readonly-scheduler-queue/` 已完成目标节点验证。
 
 ## 1. 当前架构快照
 
 ```text
-受控 URL / 本地验证输入
+第六类 Fetch Command / 本地验证输入
+        |
+        v
+Redis Streams consumer group
         |
         v
 Scrapy worker
@@ -22,7 +25,7 @@ Scrapy worker
 
 当前仍是研发验证形态，不是完整终态：
 
-- 尚未接入第六类写入的 Redis 分布式 URL 队列。
+- 已通过 Redis Streams consumer group 目标节点验证；真实第六类生产队列接入仍待上游联调。
 - 尚未运行 K8s DaemonSet / hostNetwork 生产部署。
 - 尚未交付第五类消费端事实投影。
 - 尚未完成控制平面策略运行时下发。
@@ -35,9 +38,9 @@ Scrapy worker
 | 多出口 IP 轮换 | 部分完成 | 单节点真实 Linux + 多辅助 IP + EIP 映射已验证；K8s hostNetwork 形态未验证。 |
 | IP 健康检查与黑名单 | 部分完成 | Valkey/Redis 失败计数、TTL 黑名单、Prometheus 指标已验证；captcha、全局 IP 健康和恢复试探策略仍需扩展。 |
 | Politeness 策略 | 部分完成 | 已忽略 robots.txt，并保留并发、延迟、重试配置；AutoThrottle、UA 随机化和生产调优未完成。 |
-| 分布式调度只读消费 | 规划中 | 003 已决策使用 Redis Streams consumer group，不引入 scrapy-redis 默认 scheduler / dupefilter。 |
+| 分布式调度只读消费 | 完成 P2 目标节点验证 | 003 已验证 Redis Streams consumer group 单 worker、多 worker、fetch failed、无效消息和 Kafka failure / PEL reclaim；不引入 scrapy-redis 默认 scheduler / dupefilter。只读边界脚本已覆盖 key diff 与目标 stream `XLEN` 前后不变，更宽 audit pattern 仍可补强。 |
 | HTML 对象存储 | 完成 P1 切片 | OCI Object Storage 写入、读取、gzip 校验和失败保护已验证；生命周期策略未配置。 |
-| `crawl_attempt` producer | 完成 P1 | 目标节点 T055 验证通过，覆盖 stored / skipped / storage failed / Kafka failure 分支；连接级 fetch failed 事件化待后续补强。 |
+| `crawl_attempt` producer | 完成 P2 验证切片 | 目标节点验证覆盖 stored / skipped / storage failed / Kafka failure 分支；003 已补强连接级 fetch failed 事件化。 |
 | 第五类事实投影 | 不属于本系统 | PostgreSQL pages/crawl_logs 等由第五类消费端承接，本仓库只保留 producer 契约。 |
 | ClickHouse Host 画像 | 不属于本系统 | 已明确归第五类，当前不在本仓库实现。 |
 | 下游 Python 解析服务 | 不属于本系统 | 第三类订阅事件自取 storage_key，本系统不派发 parse-tasks。 |
@@ -79,7 +82,7 @@ Scrapy worker
 | UA 随机化 | 未完成 | 尚未接入。 |
 | 重试 | 部分完成 | Scrapy retry 配置已存在；与 IP 切换策略仍需生产化验证。 |
 | 对象存储上传 + Kafka 投递 | 完成 P1 切片 | 已验证 HTML + `crawl_attempt` producer，覆盖成功、跳过、对象存储失败和 Kafka 失败记录。 |
-| Redis Streams 队列消费 | 规划中 | 003 已启动，目标是 `XREADGROUP` 只读消费、`crawl_attempt` 发布成功后 `XACK`。 |
+| Redis Streams 队列消费 | 完成 P2 目标节点验证 | 已验证 `XREADGROUP` 只读消费、`crawl_attempt` 发布成功后 `XACK`、多 worker 正常 ack 路径和 Kafka failure / PEL reclaim。 |
 | Prometheus 指标暴露 | 部分完成 | 单 worker 指标已可用，集群级指标未完成。 |
 
 ### 阶段 3：存储与下游
@@ -115,6 +118,7 @@ Scrapy worker
 - D-DEBT-2：`crawl_attempt` schema 暂在本仓库，后续迁移到契约仓库。
 - D-DEBT-3：Politeness 参数仍以 settings 默认值为主，后续接控制平面运行时下发。
 - D-DEBT-4：`content_sha256` 当前只覆盖 HTML 快照场景。
+- D-DEBT-5：P2 只读边界目标节点脚本已覆盖 Redis key diff 与目标 stream `XLEN` 前后对比，后续可继续补允许状态变化清单和更宽 audit pattern。
 - D-DEP-1：host×ip 黑名单事实/缓存切分等待第五类画像契约。
 
 ## 6. 运行中的关键指标

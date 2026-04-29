@@ -24,10 +24,10 @@
 ### M2：第六类队列只读消费接入
 
 - **目标**：接入 Redis Streams consumer group 队列只读消费形态，不在本系统写入新 URL。
-- **状态**：规划中。
+- **状态**：目标节点已验证。
 - **依赖 ADR**：ADR-0003、ADR-0004、ADR-0005、ADR-0006、ADR-0007。
 - **对应 spec**：`specs/003-p2-readonly-scheduler-queue/`
-- **验收信号**：多个 worker 可通过 `XREADGROUP` 消费第六类 `XADD` 的抓取指令；本系统无 Redis URL 写入行为；同一 `job_id + canonical_url` 重复投递生成相同 `attempt_id`；`crawl_attempt` 发布成功后 `XACK`；优先级语义只来自上游参数。
+- **验收信号**：多个 worker 可通过 `XREADGROUP` 消费第六类 `XADD` 的抓取指令；本系统无 Redis URL 写入行为；同一 `job_id + canonical_url` 重复投递生成相同 `attempt_id`；`crawl_attempt` 发布成功后 `XACK`；Kafka failure 下消息留 PEL 并可由 `XAUTOCLAIM` 接管，Kafka 恢复后发布并 ack。只读边界脚本已覆盖 key diff 与目标 stream `XLEN` 前后不变，更宽 audit pattern 可继续补强。
 
 ### M3：生产部署基础
 
@@ -62,14 +62,12 @@
 
 ## 3. 未完成关键生产能力
 
-1. 连接级 fetch 失败转换为 `crawl_attempt(fetch_result=failed)` 的事件化路径。
-2. Redis Streams consumer group 分布式队列只读消费。
-3. 多 worker 消费同一队列的运行形态验证。
-4. K8s DaemonSet + hostNetwork 部署。
-5. Grafana 基础看板、告警和运维 SOP。
-6. 24 小时稳定性压测、30-50 pages/sec 单节点目标验证。
-7. 控制平面策略运行时覆盖。
-8. 本地出站事件缓冲和 Kafka 故障补偿。
+1. Redis 只读边界审计补强：在现有 key diff + `XLEN` 前后对比之外，增加允许状态变化清单和更宽 audit pattern。
+2. K8s DaemonSet + hostNetwork 部署。
+3. Grafana 基础看板、告警和运维 SOP。
+4. 24 小时稳定性压测、30-50 pages/sec 单节点目标验证。
+5. 控制平面策略运行时覆盖。
+6. 本地出站事件缓冲和 Kafka 故障补偿。
 
 ## 4. 明确后置或暂不规划
 
@@ -85,8 +83,8 @@
 
 ## 5. 下一阶段建议
 
-继续推进 `003` spec，聚焦本仓库范围内的“Redis Streams 第六类队列只读消费 + 多 worker 运行形态”，避免把第五类消费端 PG 投影误纳入 crawler-executor。
+003 已完成目标节点验证，下一步建议进入 M3 生产部署基础：K8s DaemonSet + hostNetwork、配置注入、健康探针和指标端口收口。
 
-003 应同时补强连接级 fetch 失败到 `crawl_attempt(fetch_result=failed)` 的事件化路径，因为队列化运行后该类失败会成为 attempt 事实完整性的关键缺口。
+在进入 M3 前，可继续把 003 的只读边界审计脚本补强为 key diff + `XLEN` + 允许状态变化清单，避免后续部署形态变化时回归。
 
 若团队决定由本仓库临时维护某个消费端验证工具，必须先通过 ADR 说明其临时性质、退出条件和不进入第二类终态边界的原因。

@@ -36,7 +36,7 @@
 
 - [x] T016 增加队列读取成功 / 空队列 / 无效消息 / ack 成功 / ack 失败指标。
 - [x] T017 增加 fetch failed 指标和结构化日志。
-- [ ] T018 增加只读边界验证日志，便于审计 Redis 写入行为。
+- [x] T018 增加只读边界验证日志，便于审计 Redis 写入行为。
 
 ## 阶段 5：测试
 
@@ -57,17 +57,17 @@
 - [x] T029 创建 `deploy/scripts/run-p2-readonly-boundary-validation.sh`。
 - [x] T030 创建 `deploy/scripts/run-p2-invalid-command-validation.sh`。
 - [x] T030a 创建 `deploy/scripts/run-p2-kafka-failure-pending-validation.sh`，对齐 ADR-0008 三阶段语义。
-- [ ] T031 更新 `quickstart.md` 的真实验证记录。
+- [x] T031 更新 `quickstart.md` 的真实验证记录。
 
 ## 阶段 7：P2 退出评审
 
-- [ ] T032 验证单 worker 消费并发布 `crawl_attempt`。
-- [ ] T033 验证多 worker 正常 ack 路径无重复处理。
-- [ ] T034 验证 executor 不写 URL 队列、不 enqueue outlinks。
-- [ ] T035 验证连接级 fetch failed 发布 `crawl_attempt(fetch_result=failed)`。
-- [ ] T036 验证 Kafka 发布失败的三阶段不变量（按 ADR-0008）：(1) Kafka 不可达时 worker 不 `XACK`、消息留 PEL；(2) 第二个 worker 通过 `XAUTOCLAIM` 接管同一消息且 `times_delivered` 递增，仍不 ack；(3) Kafka 恢复后 worker 完成发布并 `XACK`，PEL 清空。不验证"达到 max_deliveries 后发布终态 attempt"，该语义在 Kafka 层不适用。
-- [ ] T037 验证无效消息被丢弃、记录日志和指标，且不写入本系统 DLQ。
-- [ ] T038 更新 `state/current.md`、`state/roadmap.md`、`state/changelog.md`。
+- [x] T032 验证单 worker 消费并发布 `crawl_attempt`。
+- [x] T033 验证多 worker 正常 ack 路径无重复处理。
+- [x] T034 验证 executor 不写 URL 队列、不 enqueue outlinks（已覆盖 key diff 与目标 stream `XLEN` 前后不变；更宽 audit pattern 仍由 T025 跟踪）。
+- [x] T035 验证连接级 fetch failed 发布 `crawl_attempt(fetch_result=failed)`。
+- [x] T036 验证 Kafka 发布失败的三阶段不变量（按 ADR-0008）：(1) Kafka 不可达时 worker 不 `XACK`、消息留 PEL；(2) 第二个 worker 通过 `XAUTOCLAIM` 接管同一消息且 `times_delivered` 递增，仍不 ack；(3) Kafka 恢复后 worker 完成发布并 `XACK`，PEL 清空。不验证"达到 max_deliveries 后发布终态 attempt"，该语义在 Kafka 层不适用。
+- [x] T037 验证无效消息被丢弃、记录日志和指标，且不写入本系统 DLQ。
+- [x] T038 更新 `state/current.md`、`state/roadmap.md`、`state/changelog.md`。
 
 ## 依赖与执行顺序
 

@@ -30,11 +30,19 @@
 - **新增能力**：目标节点 T055 验证通过，覆盖 Kafka `crawl_attempt` smoke、OCI Object Storage smoke、成功 HTML `storage_result=stored`、非 HTML `storage_result=skipped`、对象存储失败 `storage_result=failed`、Kafka 发布失败记录与对象保留。
 - **当前状态**：P1 已收口；下一阶段进入 M2：第六类队列只读消费与多 worker 运行形态。
 
+### P2 / 003：第六类队列只读消费目标节点验证
+
+- **关联 spec**：`specs/003-p2-readonly-scheduler-queue/`
+- **新增能力**：目标节点完成 Redis Streams consumer group 验证，覆盖 Step 1 写入测试 Fetch Command、Step 2 单 worker 发布 `crawl_attempt`、Step 3 多 worker 正常 ack 路径、Step 4 只读边界脚本口径、Step 5 无效消息丢弃与记录。
+- **失败语义验证**：补充验证 Kafka failure / PEL reclaim 三阶段不变量：Kafka 不可达时不 `XACK`，第二个 worker 通过 `XAUTOCLAIM` 接管且 `times_delivered` 递增，Kafka 恢复后发布 `crawl_attempt` 并 `XACK`。
+- **脚本修正**：`run-p2-kafka-failure-pending-validation.sh` 兼容 redis-py `xpending()` 返回 dict / tuple 两种形态。
+- **当前状态**：P2 目标节点验证通过；只读边界审计脚本已覆盖 key diff 与目标 stream `XLEN` 前后不变，后续可继续补允许状态变化清单和更宽 audit pattern。
+
 ### P2 / 003：第六类队列只读消费规划启动
 
 - **关联 spec**：`specs/003-p2-readonly-scheduler-queue/`
 - **新增能力**：建立 003 规划骨架，回补 ADR-0003 至 ADR-0007，明确 Redis Streams consumer group、禁用 scrapy-redis 默认 scheduler / dupefilter、`crawl_attempt` 发布成功后再 `XACK`，以及基于 `job_id + canonical_url` 生成确定性 `attempt_id`。
-- **当前状态**：草案；下一步进入 Redis Streams consumer 实现设计。
+- **当前状态**：已被同日 P2 目标节点验证记录取代。
 
 ## 2026-04-27 至 2026-04-29
 

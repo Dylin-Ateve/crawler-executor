@@ -78,7 +78,10 @@ client = redis.from_url(os.environ["FETCH_QUEUE_REDIS_URL"], decode_responses=Tr
 stream = os.environ["FETCH_QUEUE_STREAM"]
 group = os.environ["FETCH_QUEUE_GROUP"]
 summary = client.xpending(stream, group)
-count = summary[0] if summary else 0
+if isinstance(summary, dict):
+    count = int(summary.get("pending") or summary.get("count") or 0)
+else:
+    count = summary[0] if summary else 0
 entries = client.xpending_range(stream, group, "-", "+", 100) or []
 times = [int(e["times_delivered"]) for e in entries]
 consumers = sorted({e.get("consumer") for e in entries if e.get("consumer")})

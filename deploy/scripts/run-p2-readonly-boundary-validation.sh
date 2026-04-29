@@ -6,6 +6,8 @@ COMMAND_FILE="${COMMAND_FILE:-/tmp/p2-readonly-commands.$$.jsonl}"
 LOG_FILE="${P2_READONLY_LOG:-/tmp/p2-readonly-boundary-validation.$$.log}"
 KEYS_BEFORE="${P2_READONLY_KEYS_BEFORE:-/tmp/p2-readonly-keys-before.$$.txt}"
 KEYS_AFTER="${P2_READONLY_KEYS_AFTER:-/tmp/p2-readonly-keys-after.$$.txt}"
+STREAM_LEN_BEFORE="${P2_READONLY_STREAM_LEN_BEFORE:-/tmp/p2-readonly-stream-len-before.$$.txt}"
+STREAM_LEN_AFTER="${P2_READONLY_STREAM_LEN_AFTER:-/tmp/p2-readonly-stream-len-after.$$.txt}"
 
 if [[ -z "${FETCH_QUEUE_REDIS_URL:-${REDIS_URL:-}}" ]]; then
   echo "缺少 FETCH_QUEUE_REDIS_URL 或 REDIS_URL。"
@@ -38,7 +40,7 @@ echo
 
 "${ROOT_DIR}/deploy/scripts/p2-enqueue-fetch-commands.sh" "${COMMAND_FILE}"
 
-python - "${KEYS_BEFORE}" <<'PY'
+python - "${KEYS_BEFORE}" "${STREAM_LEN_BEFORE}" <<'PY'
 import os
 import sys
 
@@ -50,6 +52,8 @@ keys = sorted(client.scan_iter(match=pattern))
 with open(sys.argv[1], "w", encoding="utf-8") as handle:
     for key in keys:
         handle.write(key + "\n")
+with open(sys.argv[2], "w", encoding="utf-8") as handle:
+    handle.write(str(client.xlen(os.environ["FETCH_QUEUE_STREAM"])) + "\n")
 PY
 
 cd "${ROOT_DIR}/src/crawler"
@@ -65,7 +69,7 @@ if [[ "${status}" -ne 0 ]]; then
   exit "${status}"
 fi
 
-python - "${KEYS_AFTER}" <<'PY'
+python - "${KEYS_AFTER}" "${STREAM_LEN_AFTER}" <<'PY'
 import os
 import sys
 
@@ -77,7 +81,18 @@ keys = sorted(client.scan_iter(match=pattern))
 with open(sys.argv[1], "w", encoding="utf-8") as handle:
     for key in keys:
         handle.write(key + "\n")
+with open(sys.argv[2], "w", encoding="utf-8") as handle:
+    handle.write(str(client.xlen(os.environ["FETCH_QUEUE_STREAM"])) + "\n")
 PY
+
+stream_len_before="$(cat "${STREAM_LEN_BEFORE}")"
+stream_len_after="$(cat "${STREAM_LEN_AFTER}")"
+echo "P2 readonly audit: stream=${FETCH_QUEUE_STREAM} xlen_before=${stream_len_before} xlen_after=${stream_len_after}"
+if [[ "${stream_len_after}" != "${stream_len_before}" ]]; then
+  echo "P2 只读边界验证失败：worker 运行后目标 stream 长度发生变化：before=${stream_len_before}, after=${stream_len_after}。"
+  echo "这可能表示 executor 向同一 stream 追加了 URL 或其它消息。"
+  exit 1
+fi
 
 new_keys="$(comm -13 "${KEYS_BEFORE}" "${KEYS_AFTER}" || true)"
 if [[ -n "${new_keys}" ]]; then
@@ -91,4 +106,4 @@ grep -q "p1_crawl_attempt_published" "${LOG_FILE}" || {
   exit 1
 }
 
-echo "P2 Redis 只读边界验证通过：未发现 executor 新建 URL 队列或去重 key。"
+echo "P2 Redis 只读边界验证通过：未发现 executor 新建 URL 队列、去重 key 或向目标 stream 追加消息。"

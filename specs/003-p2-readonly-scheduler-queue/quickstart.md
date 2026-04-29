@@ -28,7 +28,7 @@
 命令：
 
 ```bash
-deploy/scripts/p2-enqueue-fetch-commands.sh /tmp/p2-fetch-commands.jsonl
+deploy/scripts/p2-enqueue-fetch-commands.sh
 ```
 
 结果：
@@ -90,7 +90,7 @@ deploy/scripts/run-p2-invalid-command-validation.sh
 
 结果：
 
-- 非法 JSON、缺少 URL、不支持 URL schema 均被记录。
+- 非法 JSON、缺少必填字段、不支持 URL schema 均被记录。
 - worker 不崩溃。
 - 指标记录 invalid command。
 
@@ -98,9 +98,33 @@ deploy/scripts/run-p2-invalid-command-validation.sh
 
 | 项目 | 目标 | 实测 | 结论 |
 |---|---|---|---|
-| 单 worker 消费 | 有效队列指令产生 `crawl_attempt` | 待实现后填写 | 待验证 |
-| 多 worker 消费 | 正常 ack 路径无重复处理 | 待实现后填写 | 待验证 |
-| 只读边界 | executor 不写 URL 队列 / 不 enqueue outlinks | 待实现后填写 | 待验证 |
-| fetch failed | 连接级失败发布 `fetch_result=failed` | 待实现后填写 | 待验证 |
-| 无效消息 | 记录错误且 worker 不崩溃 | 待实现后填写 | 待验证 |
-| attempt 幂等 | 同一 `job_id + canonical_url` 生成相同 `attempt_id` | 待实现后填写 | 待验证 |
+| 单 worker 消费 | 有效队列指令产生 `crawl_attempt` | 目标节点执行 `run-p2-queue-consumer-validation.sh`，HTML / 非 HTML / fetch failed 三条指令均发布 `p1_crawl_attempt_published`；HTML 对象后续通过 `p1_verify_storage_object` 读取并 gzip 解压，`verified_uncompressed_size=92443` | 通过 |
+| 多 worker 消费 | 正常 ack 路径无重复处理 | 目标节点执行 `run-p2-multi-worker-validation.sh`，10 条 favicon 指令由两个 worker 消费，脚本断言 10 条发布日志与 10 个唯一 `attempt_id` | 通过 |
+| 只读边界 | executor 不写 URL 队列 / 不 enqueue outlinks | 目标节点执行 `run-p2-readonly-boundary-validation.sh`，未发现 executor 新建 URL 队列或去重 key；脚本已补充目标 stream `XLEN` 前后不变检查 | 通过（可继续增强审计范围） |
+| fetch failed | 连接级失败发布 `fetch_result=failed` | 单 worker 验证中 `http://127.0.0.1:1/` 触发连接拒绝，最终发布 `storage_result=skipped reason=fetch_failed` | 通过 |
+| 无效消息 | 记录错误且 worker 不崩溃 | 目标节点执行 `run-p2-invalid-command-validation.sh`，缺少 `job_id`、非法 URL、非法 payload JSON 均记录 `fetch_queue_invalid_message`，worker 正常退出且未发布 `crawl_attempt` | 通过 |
+| attempt 幂等 | 同一 `job_id + canonical_url` 生成相同 `attempt_id` | 单元测试已覆盖；多 worker 目标节点验证中 10 条不同 `job_id` 产生 10 个唯一 `attempt_id` | 通过 |
+
+## 补充验证：Kafka 失败与 PEL reclaim
+
+命令：
+
+```bash
+deploy/scripts/run-p2-kafka-failure-pending-validation.sh
+```
+
+目标节点结果：
+
+- Phase 1：Kafka 指向 `127.0.0.1:1` 时发布失败，worker 不 `XACK`，消息留在 PEL。
+- Phase 2：第二个 worker 通过 `XAUTOCLAIM` 接管同一条消息，`times_delivered` 递增，仍不 ack。
+- Phase 3：恢复真实 Kafka 后，worker 成功发布 `crawl_attempt` 并 `XACK`，PEL 清空。
+- 日志目录：`/tmp/p2-kafka-failure-validation.1978368`。
+
+脚本修正记录：
+
+- 目标节点 redis-py 的 `xpending()` 返回 dict；已将 `run-p2-kafka-failure-pending-validation.sh` 的 PEL summary 解析修正为兼容 dict / tuple 两种形态。
+
+## 验证限制与后续补强
+
+- 当前只读边界脚本已检查 Redis key diff 和目标 stream `XLEN` 前后不变，可覆盖新增 URL 队列、去重 key 以及向同一 stream 追加消息的回归；后续仍可补充允许状态变化清单和更宽的 audit pattern。
+- 目标节点首次执行 Step 2 时，`p1_verify_storage_object` 缺少 OCI bucket / namespace / region 环境变量导致对象复验失败；补齐环境变量后同一 `storage_key` 读取和 gzip 解压验证通过。
