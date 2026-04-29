@@ -59,6 +59,7 @@
 | [0005](0005-do-not-use-scrapy-redis-scheduler.md) | 不使用 scrapy-redis 默认 scheduler / dupefilter | 已接受 | 2026-04-29 |
 | [0006](0006-ack-fetch-command-after-crawl-attempt-published.md) | `crawl_attempt` 发布成功后再确认抓取指令 | 已接受 | 2026-04-29 |
 | [0007](0007-fetch-command-identity-and-invalid-message-handling.md) | 抓取指令标识与无效消息处理 | 已接受 | 2026-04-29 |
+| [0008](0008-kafka-publish-failure-not-in-max-deliveries-terminal-semantics.md) | Kafka 发布失败不进入最大投递次数终态语义 | 已接受 | 2026-04-29 |
 | [0010](0010-system-group-class-2-positioning.md) | crawler-executor 锁定为系统群第二类的纯粹实现 | 已接受 | 2026-04-29 |
 
 ## 待回补 ADR 候选
