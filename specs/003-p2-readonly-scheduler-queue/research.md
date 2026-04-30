@@ -135,6 +135,21 @@ P1 T055 覆盖了：
 
 worker 收到 SIGTERM 后停止新的 `XREADGROUP`，不清空 PEL；正在 fetch 的请求完成后，若 `crawl_attempt` 发布成功则 `XACK`，否则交给后续 `XAUTOCLAIM`。
 
+具体优雅停机不变量沉淀于 ADR-0009：
+
+| 维度 | 行为 |
+|---|---|
+| 触发信号 | SIGTERM 与 SIGINT 同语义；SIGHUP / SIGQUIT 沿用进程默认行为。 |
+| 信号处理路径 | 不接管 Scrapy 自身关停；通过共享停机标志，spider 消费循环每次迭代前检查标志。 |
+| `XREADGROUP` | 进入停机后停止读取；阻塞中的读允许至多一个 `block_ms` 周期（缺省 5 秒）自然返回。 |
+| `XAUTOCLAIM` | 进入停机后停止接管别的 consumer 的 PEL。 |
+| In-flight | 已交给 Scrapy engine 的 request 允许完成。 |
+| Drain 时限 | 缺省 25 秒，通过 `FETCH_QUEUE_SHUTDOWN_DRAIN_SECONDS` 暴露；超时后未完成请求按 "未发布 attempt" 留 PEL。 |
+| Fetch 终态失败 | 仍按 ADR-0006 发布终态 `crawl_attempt` 后 `XACK`。 |
+| Kafka 不可达 | 仍按 ADR-0008 不 `XACK`、留 PEL、不递增投递计数。 |
+| PEL 移交 | 退出前不主动重新 `XAUTOCLAIM`，由其它存活 worker 接管。 |
+| 可观测性 | 入口与退出各一条结构化日志；Prometheus 计数 `fetch_queue_event="shutdown"`。 |
+
 ## 6. 初步建议
 
 003 直接实现 Redis Streams consumer group 轻量 consumer。第六类在本阶段可由本地脚本模拟 `XADD`，但生产语义仍归第六类。

@@ -27,7 +27,7 @@
 | 章程门禁 | `.specify/memory/constitution.md` | 通过 | 规格先行，先定义队列边界、失败语义和验收标准。 |
 | 产品门禁 | `.specify/memory/product.md` | 通过 | 仍聚焦第二类执行系统，不进入调度决策和事实层。 |
 | 架构门禁 | `.specify/memory/architecture.md` | 通过 | 符合“抓取指令进 → 原始字节落盘 + `crawl_attempt` 事件出”。 |
-| 决策门禁 | `state/decisions/` | 通过 | 遵守 ADR-0002、ADR-0003、ADR-0004、ADR-0005、ADR-0006、ADR-0010。 |
+| 决策门禁 | `state/decisions/` | 通过 | 遵守 ADR-0002、ADR-0003、ADR-0004、ADR-0005、ADR-0006、ADR-0008、ADR-0009、ADR-0010。 |
 | 路线图对齐 | `state/roadmap.md` | 记录 | 对应 M2：第六类队列只读消费接入。 |
 
 ## 项目结构
@@ -76,3 +76,4 @@ deploy/scripts/
 | fetch failed errback 事件化 | 需要保证取到指令后无论连接是否成功都有 attempt 事实 | 只依赖 Scrapy 日志会让第五类缺失失败事实 |
 | Redis 写入边界测试 | ADR-0003 要求证明不写 URL 队列 | 只做人工代码审查不足以防止后续回归 |
 | `crawl_attempt` 发布后再 `XACK` | 保证已 ack 指令都有系统群可追溯事实 | request 入队后立即 ack 会造成无 attempt 事实的任务丢失 |
+| 优雅停机共享标志 + 25 秒 drain 时限 | 与 K8s 默认 `terminationGracePeriodSeconds=30` 对齐，且不接管 Scrapy 自身关停 | 自行注册 signal handler 接管 reactor 关停会与 Scrapy engine 并发；drain=0 会扩大未发布 attempt 窗口；drain≥30 秒会被 SIGKILL 强杀 |

@@ -1,9 +1,9 @@
 # 当前状态：crawler-executor
 
-**更新日期**：2026-04-29
+**更新日期**：2026-04-30
 **对应 commit**：待下次合并后回填
 **对照终态**：`.specify/memory/architecture.md`
-**当前阶段**：P0 核心链路已验证；P1 `crawl_attempt` producer 已通过目标节点 T055 验证。M2 `specs/003-p2-readonly-scheduler-queue/` 已完成目标节点验证。
+**当前阶段**：P0 核心链路已验证；P1 `crawl_attempt` producer 已通过目标节点 T055 验证。M2 `specs/003-p2-readonly-scheduler-queue/` 已完成目标节点验证。T015c 优雅停机语义（ADR-0009 / FR-022）已落地实现并通过单元测试，`run-p2-graceful-shutdown-validation.sh` 待目标节点执行收尾。
 
 ## 1. 当前架构快照
 
@@ -38,7 +38,7 @@ Scrapy worker
 | 多出口 IP 轮换 | 部分完成 | 单节点真实 Linux + 多辅助 IP + EIP 映射已验证；K8s hostNetwork 形态未验证。 |
 | IP 健康检查与黑名单 | 部分完成 | Valkey/Redis 失败计数、TTL 黑名单、Prometheus 指标已验证；captcha、全局 IP 健康和恢复试探策略仍需扩展。 |
 | Politeness 策略 | 部分完成 | 已忽略 robots.txt，并保留并发、延迟、重试配置；AutoThrottle、UA 随机化和生产调优未完成。 |
-| 分布式调度只读消费 | 完成 P2 目标节点验证 | 003 已验证 Redis Streams consumer group 单 worker、多 worker、fetch failed、无效消息和 Kafka failure / PEL reclaim；不引入 scrapy-redis 默认 scheduler / dupefilter。只读边界脚本已覆盖 key diff 与目标 stream `XLEN` 前后不变，更宽 audit pattern 仍可补强。 |
+| 分布式调度只读消费 | 完成 P2 目标节点验证 | 003 已验证 Redis Streams consumer group 单 worker、多 worker、fetch failed、无效消息和 Kafka failure / PEL reclaim；不引入 scrapy-redis 默认 scheduler / dupefilter。只读边界脚本已覆盖 key diff 与目标 stream `XLEN` 前后不变，更宽 audit pattern 仍可补强。优雅停机（ADR-0009 / FR-022）已落地实现，`run-p2-graceful-shutdown-validation.sh` 待目标节点执行。 |
 | HTML 对象存储 | 完成 P1 切片 | OCI Object Storage 写入、读取、gzip 校验和失败保护已验证；生命周期策略未配置。 |
 | `crawl_attempt` producer | 完成 P2 验证切片 | 目标节点验证覆盖 stored / skipped / storage failed / Kafka failure 分支；003 已补强连接级 fetch failed 事件化。 |
 | 第五类事实投影 | 不属于本系统 | PostgreSQL pages/crawl_logs 等由第五类消费端承接，本仓库只保留 producer 契约。 |

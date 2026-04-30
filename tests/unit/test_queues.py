@@ -151,3 +151,120 @@ def test_stream_consumer_reads_reclaimed_pending_before_new_messages():
     assert len(entries) == 1
     assert entries[0].message_id == "3-0"
     assert entries[0].command.deliveries == 3
+
+
+class RecordingStreamRedis:
+    """记录 xreadgroup / xautoclaim / xack 的调用次数，用于停机语义测试。"""
+
+    def __init__(self):
+        self.xreadgroup_calls = 0
+        self.xautoclaim_calls = 0
+        self.acked = []
+
+    def xreadgroup(self, *_args, **_kwargs):
+        self.xreadgroup_calls += 1
+        return [
+            (
+                b"crawl:tasks",
+                [
+                    (
+                        b"1-0",
+                        {
+                            b"url": b"https://example.com",
+                            b"canonical_url": b"https://example.com",
+                            b"job_id": b"job-1",
+                        },
+                    )
+                ],
+            )
+        ]
+
+    def xautoclaim(self, *_args, **_kwargs):
+        self.xautoclaim_calls += 1
+        return (b"0-0", [])
+
+    def xack(self, stream, group, message_id):
+        self.acked.append((stream, group, message_id))
+
+    def xpending_range(self, *_args, **_kwargs):
+        return [{"times_delivered": 1}]
+
+
+def test_request_shutdown_sets_flag():
+    consumer = RedisStreamsFetchConsumer(
+        RecordingStreamRedis(), stream="crawl:tasks", group="group", consumer="worker"
+    )
+
+    assert consumer.is_shutting_down is False
+    consumer.request_shutdown()
+    assert consumer.is_shutting_down is True
+
+
+def test_read_returns_empty_after_shutdown_without_calling_redis():
+    redis = RecordingStreamRedis()
+    consumer = RedisStreamsFetchConsumer(
+        redis, stream="crawl:tasks", group="group", consumer="worker"
+    )
+    consumer.request_shutdown()
+
+    entries = consumer.read()
+
+    assert entries == []
+    assert redis.xreadgroup_calls == 0
+    assert redis.xautoclaim_calls == 0
+
+
+def test_reclaim_pending_returns_empty_after_shutdown_without_calling_redis():
+    redis = RecordingStreamRedis()
+    consumer = RedisStreamsFetchConsumer(
+        redis, stream="crawl:tasks", group="group", consumer="worker"
+    )
+    consumer.request_shutdown()
+
+    assert consumer.reclaim_pending() == []
+    assert redis.xautoclaim_calls == 0
+
+
+def test_ack_increments_acked_count():
+    redis = RecordingStreamRedis()
+    consumer = RedisStreamsFetchConsumer(
+        redis, stream="crawl:tasks", group="group", consumer="worker"
+    )
+
+    assert consumer.acked_count == 0
+    consumer.ack("1-0")
+    consumer.ack("2-0")
+
+    assert consumer.acked_count == 2
+    assert redis.acked == [
+        ("crawl:tasks", "group", "1-0"),
+        ("crawl:tasks", "group", "2-0"),
+    ]
+
+
+def test_read_skips_xreadgroup_when_shutdown_after_reclaim():
+    """覆盖 reclaim_pending() 期间进入停机态的边界场景。"""
+
+    class ShutdownDuringReclaimRedis(RecordingStreamRedis):
+        def __init__(self, consumer_ref):
+            super().__init__()
+            self.consumer_ref = consumer_ref
+
+        def xautoclaim(self, *args, **kwargs):
+            self.xautoclaim_calls += 1
+            self.consumer_ref["consumer"].request_shutdown()
+            return (b"0-0", [])
+
+    consumer_ref = {}
+    redis = ShutdownDuringReclaimRedis(consumer_ref)
+    consumer = RedisStreamsFetchConsumer(
+        redis, stream="crawl:tasks", group="group", consumer="worker"
+    )
+    consumer_ref["consumer"] = consumer
+
+    entries = consumer.read()
+
+    assert entries == []
+    # reclaim 触发停机后，read() 不应再调用 xreadgroup
+    assert redis.xautoclaim_calls == 1
+    assert redis.xreadgroup_calls == 0

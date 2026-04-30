@@ -1,8 +1,21 @@
 # 交付变更记录：crawler-executor
 
-**更新日期**：2026-04-29
+**更新日期**：2026-04-30
 **文档层级**：现状层 / 交付记录
 **排序规则**：倒序记录已合并或已完成验证的 spec 与架构决策。
+
+## 2026-04-30
+
+### P2 / 003：优雅停机与 PEL 移交语义落地（T015c 收尾）
+
+- **关联 spec**：`specs/003-p2-readonly-scheduler-queue/`
+- **新增能力**：
+  - 新增 ADR-0009《优雅停机与 PEL 移交语义》，沉淀 SIGTERM / SIGINT 同语义、SIGHUP / SIGQUIT 不纳入、停机期间禁止 `XAUTOCLAIM`、25 秒 drain 缺省时限、不接管 Scrapy 自身关停（共享标志 + spider 消费循环检查）、阻塞读至多等一个 `block_ms`、停机期失败分支沿用 ADR-0006 / ADR-0008。
+  - spec 003 增补边界场景、FR-022、SC-008 与 2026-04-30 澄清记录；research §5 增补优雅停机行为表；plan 决策门禁补 ADR-0008/0009 与复杂度跟踪。
+  - 实现侧 `RedisStreamsFetchConsumer` 暴露 `request_shutdown()` / `is_shutting_down` / `acked_count`；`FetchQueueSpider` 通过 `spider_closed` / `engine_stopped` 信号触发停机入口与退出总结；`FETCH_QUEUE_SHUTDOWN_DRAIN_SECONDS` 暴露到 settings。
+  - 单元测试覆盖：consumer 停机后不再调用 `xreadgroup` / `xautoclaim`、`reclaim` 期间进入停机的边界、spider `spider_closed` / `engine_stopped` handler 行为与重复触发幂等、`start()` 在停机态立即退出。
+  - 新增 `deploy/scripts/run-p2-graceful-shutdown-validation.sh`，覆盖 SIGTERM、SIGINT 同语义、SIGHUP 不进入优雅停机路径三阶段断言。
+- **当前状态**：T015c 实现与单元验证完成；目标节点端到端验证脚本待运维侧执行。
 
 ## 2026-04-29
 

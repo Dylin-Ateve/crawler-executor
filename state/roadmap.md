@@ -1,6 +1,6 @@
 # 演进路线图：crawler-executor
 
-**更新日期**：2026-04-29
+**更新日期**：2026-04-30
 **文档层级**：现状层 / 路线图
 **组织方式**：按能力里程碑组织，不按固定时间承诺。
 
@@ -24,10 +24,10 @@
 ### M2：第六类队列只读消费接入
 
 - **目标**：接入 Redis Streams consumer group 队列只读消费形态，不在本系统写入新 URL。
-- **状态**：目标节点已验证。
-- **依赖 ADR**：ADR-0003、ADR-0004、ADR-0005、ADR-0006、ADR-0007。
+- **状态**：目标节点已验证；优雅停机语义（ADR-0009 / FR-022）已落地实现，目标节点端到端脚本待执行。
+- **依赖 ADR**：ADR-0003、ADR-0004、ADR-0005、ADR-0006、ADR-0007、ADR-0008、ADR-0009。
 - **对应 spec**：`specs/003-p2-readonly-scheduler-queue/`
-- **验收信号**：多个 worker 可通过 `XREADGROUP` 消费第六类 `XADD` 的抓取指令；本系统无 Redis URL 写入行为；同一 `job_id + canonical_url` 重复投递生成相同 `attempt_id`；`crawl_attempt` 发布成功后 `XACK`；Kafka failure 下消息留 PEL 并可由 `XAUTOCLAIM` 接管，Kafka 恢复后发布并 ack。只读边界脚本已覆盖 key diff 与目标 stream `XLEN` 前后不变，更宽 audit pattern 可继续补强。
+- **验收信号**：多个 worker 可通过 `XREADGROUP` 消费第六类 `XADD` 的抓取指令；本系统无 Redis URL 写入行为；同一 `job_id + canonical_url` 重复投递生成相同 `attempt_id`；`crawl_attempt` 发布成功后 `XACK`；Kafka failure 下消息留 PEL 并可由 `XAUTOCLAIM` 接管，Kafka 恢复后发布并 ack；SIGTERM / SIGINT 触发优雅停机后停止 `XREADGROUP` 与 `XAUTOCLAIM`、in-flight 完成后 ack 或留 PEL、不主动清空 PEL。只读边界脚本已覆盖 key diff 与目标 stream `XLEN` 前后不变，更宽 audit pattern 可继续补强。
 
 ### M3：生产部署基础
 
@@ -83,8 +83,10 @@
 
 ## 5. 下一阶段建议
 
-003 已完成目标节点验证，下一步建议进入 M3 生产部署基础：K8s DaemonSet + hostNetwork、配置注入、健康探针和指标端口收口。
+003 已完成目标节点验证，T015c 优雅停机语义（ADR-0009 / FR-022）已落地。`run-p2-graceful-shutdown-validation.sh` 待目标节点执行后即可作为 003 完整收尾。
 
-在进入 M3 前，可继续把 003 的只读边界审计脚本补强为 key diff + `XLEN` + 允许状态变化清单，避免后续部署形态变化时回归。
+下一步建议进入 M3 生产部署基础：K8s DaemonSet + hostNetwork、配置注入、健康探针和指标端口收口。M3 spec 需要把 `terminationGracePeriodSeconds`、`preStop` 与 ADR-0009 25 秒 drain 时限对齐作为入口约束。
+
+D-DEBT-5（只读边界 audit pattern 加宽）按现状层债务跟进，不阻塞 M3 启动。
 
 若团队决定由本仓库临时维护某个消费端验证工具，必须先通过 ADR 说明其临时性质、退出条件和不进入第二类终态边界的原因。

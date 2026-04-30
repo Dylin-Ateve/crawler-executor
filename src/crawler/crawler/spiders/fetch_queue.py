@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import time
 from datetime import datetime, timezone
 
 import scrapy
+from scrapy import signals as scrapy_signals
 
 from crawler.metrics import metrics
 from crawler.queues import FetchCommand, RedisStreamsFetchConsumer
@@ -22,27 +24,86 @@ class FetchQueueSpider(scrapy.Spider):
         super().__init__(*args, **kwargs)
         self.max_messages = int(max_messages or 0)
         self.seen_messages = 0
+        # ADR-0009 优雅停机相关运行态。
+        self.shutdown_drain_seconds = 25
+        self._shutdown_started_at = None
+        self._shutdown_summary_logged = False
 
     @classmethod
     def from_crawler(cls, crawler, *args, **kwargs):
         spider = super().from_crawler(crawler, *args, **kwargs)
         spider.consumer = RedisStreamsFetchConsumer.from_settings(crawler.settings)
         spider.default_max_messages = crawler.settings.getint("FETCH_QUEUE_MAX_MESSAGES", 0)
+        spider.shutdown_drain_seconds = crawler.settings.getint(
+            "FETCH_QUEUE_SHUTDOWN_DRAIN_SECONDS", 25
+        )
+        # ADR-0009：不注册自定义 signal.signal() handler，通过 Scrapy 自身关停信号
+        # 触发 consumer.request_shutdown()。spider_closed 与 engine_stopped 的连接
+        # 形成 "进入停机标志 → 进入 drain → 退出总结" 的闭环。
+        crawler.signals.connect(
+            spider._on_spider_closed, signal=scrapy_signals.spider_closed
+        )
+        crawler.signals.connect(
+            spider._on_engine_stopped, signal=scrapy_signals.engine_stopped
+        )
         return spider
+
+    def _on_spider_closed(self, spider, reason):
+        if spider is not self:
+            return
+        if self.consumer.is_shutting_down:
+            return
+        self._shutdown_started_at = time.monotonic()
+        self.consumer.request_shutdown()
+        metrics.record_fetch_queue_event("shutdown")
+        self.logger.info(
+            "fetch_queue_shutdown_signal_received reason=%s seen_messages=%s acked_count=%s drain_seconds=%s",
+            reason,
+            self.seen_messages,
+            self.consumer.acked_count,
+            self.shutdown_drain_seconds,
+        )
+
+    def _on_engine_stopped(self):
+        if self._shutdown_summary_logged:
+            return
+        if not self.consumer.is_shutting_down:
+            return
+        if self._shutdown_started_at is None:
+            elapsed = 0.0
+        else:
+            elapsed = time.monotonic() - self._shutdown_started_at
+        drain_timeout = elapsed > self.shutdown_drain_seconds
+        in_flight_estimate = max(self.seen_messages - self.consumer.acked_count, 0)
+        self.logger.info(
+            "fetch_queue_shutdown_loop_exit elapsed_seconds=%.3f drain_timeout=%s seen_messages=%s acked_count=%s in_flight_estimate=%s",
+            elapsed,
+            "true" if drain_timeout else "false",
+            self.seen_messages,
+            self.consumer.acked_count,
+            in_flight_estimate,
+        )
+        self._shutdown_summary_logged = True
 
     async def start(self):
         self.consumer.ensure_group()
         max_messages = self.max_messages or self.default_max_messages
         while True:
+            if self.consumer.is_shutting_down:
+                return
             if max_messages and self.seen_messages >= max_messages:
                 return
             entries = self.consumer.read()
             if not entries:
+                if self.consumer.is_shutting_down:
+                    return
                 metrics.record_fetch_queue_event("empty")
                 if max_messages:
                     return
                 continue
             for entry in entries:
+                if self.consumer.is_shutting_down:
+                    return
                 if max_messages and self.seen_messages >= max_messages:
                     return
                 if not entry.is_valid:

@@ -30,7 +30,15 @@
 - [x] T015 实现 Scrapy errback，将 DNS / TCP / timeout 等连接级失败转为 `crawl_attempt(fetch_result=failed)`。
 - [x] T015a 实现 `crawl_attempt` 发布成功后再 `XACK`。
 - [x] T015b 实现可重试失败不 ack、超过最大投递次数后发布终态失败再 ack。
-- [ ] T015c 实现 SIGTERM 停止读取新消息但不清空 PEL。
+- [x] T015c 实现 ADR-0009 / FR-022 优雅停机语义，按子任务拆解：
+  - [x] T015c-1 在 `src/crawler/crawler/queues.py` 增加共享停机标志：`RedisStreamsFetchConsumer` 暴露 `request_shutdown()` 与 `is_shutting_down` 属性；`read()` 在停机态下不再发起 `XREADGROUP` 与 `XAUTOCLAIM`，立即返回空列表；`ack()` 维护 `acked_count` 用于退出总结日志。
+  - [x] T015c-2 在 `src/crawler/crawler/spiders/fetch_queue.py` 的 `start()` 循环每次迭代前检查 `consumer.is_shutting_down`，命中则退出循环；不注册自定义 `signal.signal()` handler。
+  - [x] T015c-3 通过 Scrapy `spider_closed` 信号触发 `consumer.request_shutdown()`，并通过 `engine_stopped` 信号输出退出总结日志，二者均不接管 Scrapy 自身关停流程。
+  - [x] T015c-4 在 `src/crawler/crawler/settings.py` 增加 `FETCH_QUEUE_SHUTDOWN_DRAIN_SECONDS`，缺省 25。drain 时限超过后由 `engine_stopped` 总结日志标记 `drain_timeout=true`。
+  - [x] T015c-5 复用现有 `metrics.record_fetch_queue_event` 计数 `shutdown`；spider 入口日志 `fetch_queue_shutdown_signal_received`、退出日志 `fetch_queue_shutdown_loop_exit` 各一条，退出日志包含 `seen_messages` / `acked_count` / `in_flight_estimate` / `drain_timeout`。
+  - [x] T015c-6 单元测试覆盖：consumer 停机后 `read()` / `reclaim_pending()` 不再调用 redis（`tests/unit/test_queues.py`）；spider `_on_spider_closed` / `_on_engine_stopped` 行为与 `start()` 在停机态立即退出（`tests/unit/test_fetch_queue_shutdown.py`）。
+  - [x] T015c-7 创建 `deploy/scripts/run-p2-graceful-shutdown-validation.sh`，覆盖 SIGTERM 退出耗时、`XLEN` 不变、PEL 留存与 `times_delivered`、停机入口与退出日志四类断言。
+  - [x] T015c-8 同一脚本 Phase 2 验证 SIGINT 与 SIGTERM 同语义；Phase 3 验证 SIGHUP 不触发 `fetch_queue_shutdown_signal_received`，沿用进程默认行为；SIGQUIT 因默认 core dump 不在脚本内验证，由 ADR-0009 §1 直接声明。
 
 ## 阶段 4：指标与日志
 

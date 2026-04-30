@@ -126,6 +126,12 @@ class RedisStreamsFetchConsumer:
         self.block_ms = block_ms
         self.max_deliveries = max_deliveries
         self.claim_min_idle_ms = claim_min_idle_ms
+        # ADR-0009：共享停机标志。优雅停机进入后 read() 不再发起 XREADGROUP，
+        # reclaim_pending() 不再发起 XAUTOCLAIM；本进程 PEL 中的消息保留，
+        # 由其它存活 worker 通过后续 XAUTOCLAIM 接管。
+        self._shutdown = False
+        # 用于退出前总结日志，配合 spider 计算 in-flight 估算值。
+        self.acked_count = 0
 
     @classmethod
     def from_settings(cls, settings):
@@ -145,6 +151,19 @@ class RedisStreamsFetchConsumer:
             claim_min_idle_ms=settings.getint("FETCH_QUEUE_CLAIM_MIN_IDLE_MS", 60000),
         )
 
+    @property
+    def is_shutting_down(self) -> bool:
+        return self._shutdown
+
+    def request_shutdown(self) -> None:
+        """触发优雅停机。详见 ADR-0009：
+
+        - 停止 XREADGROUP 与 XAUTOCLAIM。
+        - 已经在 PEL 中的消息保持留存，由其它存活 worker 通过 XAUTOCLAIM 接管。
+        - 不主动 ack 任何 in-flight 之外的消息。
+        """
+        self._shutdown = True
+
     def ensure_group(self) -> None:
         try:
             self.redis_client.xgroup_create(self.stream, self.group, id="0", mkstream=True)
@@ -153,9 +172,14 @@ class RedisStreamsFetchConsumer:
                 raise
 
     def read(self) -> List[StreamFetchCommand]:
+        if self._shutdown:
+            return []
         claimed = self.reclaim_pending()
         if claimed:
             return claimed
+        # 阻塞读之前再次检查停机标志：reclaim_pending() 期间可能进入停机态。
+        if self._shutdown:
+            return []
         response = self.redis_client.xreadgroup(
             self.group,
             self.consumer,
@@ -167,8 +191,11 @@ class RedisStreamsFetchConsumer:
 
     def ack(self, message_id: str) -> None:
         self.redis_client.xack(self.stream, self.group, message_id)
+        self.acked_count += 1
 
     def reclaim_pending(self) -> List[StreamFetchCommand]:
+        if self._shutdown:
+            return []
         try:
             response = self.redis_client.xautoclaim(
                 self.stream,
