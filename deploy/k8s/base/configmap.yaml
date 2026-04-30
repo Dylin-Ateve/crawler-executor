@@ -1,0 +1,62 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: crawler-executor-config
+  labels:
+    app.kubernetes.io/name: crawler-executor
+    app.kubernetes.io/component: fetch-worker
+data:
+  fetch_queue_backend: redis_streams
+  fetch_queue_stream: crawl:tasks
+  fetch_queue_group: crawler-executor
+  fetch_queue_consumer_template: ${NODE_NAME}-${POD_NAME}
+  fetch_queue_read_count: "10"
+  fetch_queue_block_ms: "1000"
+  fetch_queue_max_deliveries: "3"
+  fetch_queue_claim_min_idle_ms: "60000"
+  fetch_queue_shutdown_drain_seconds: "25"
+  fetch_queue_max_messages: "0"
+  concurrent_requests: "64"
+  concurrent_requests_per_domain: "4"
+  download_delay: "0.1"
+  download_timeout: "30"
+  retry_enabled: "true"
+  retry_times: "2"
+  force_close_connections: "true"
+  crawl_interface: enp0s5
+  excluded_local_ips: ""
+  local_ip_pool: ""
+  ip_selection_strategy: STICKY_BY_HOST
+  ip_failure_threshold: "5"
+  ip_failure_window_seconds: "300"
+  ip_cooldown_seconds: "1800"
+  redis_key_prefix: crawler
+  enable_p1_persistence: "true"
+  object_storage_provider: oci
+  oci_object_storage_bucket: clawer_bucket_prod
+  oci_object_storage_namespace: axfwvgxlpupm
+  oci_object_storage_region: us-phoenix-1
+  oci_object_storage_endpoint: https://objectstorage.us-phoenix-1.oraclecloud.com
+  oci_auth_mode: instance_principal
+  content_compression: gzip
+  kafka_bootstrap_servers: CHANGE_ME_BOOTSTRAP_SERVERS
+  kafka_security_protocol: SASL_SSL
+  kafka_sasl_mechanism: SCRAM-SHA-512
+  kafka_ssl_ca_location: /etc/pki/tls/certs/ca-bundle.crt
+  kafka_topic_crawl_attempt: crawler.crawl-attempt.v1
+  kafka_batch_size: "100"
+  kafka_producer_retries: "3"
+  kafka_request_timeout_ms: "30000"
+  kafka_delivery_timeout_ms: "120000"
+  kafka_flush_timeout_ms: "130000"
+  prometheus_port: "9410"
+  health_port: "9411"
+  readiness_max_heartbeat_age_seconds: "30"
+  log_level: INFO
+  crawler_paused: "false"
+  crawler_pause_poll_seconds: "5"
+  crawler_debug_mode: "false"
+  debug_fetch_queue_stream_template: crawl:tasks:debug:{node_name}
+  debug_fetch_queue_group_template: crawler-executor-debug:{node_name}
+  debug_fetch_queue_consumer_template: ${NODE_NAME}-${POD_NAME}-debug
+  debug_attempt_tier: debug

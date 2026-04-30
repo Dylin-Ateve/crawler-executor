@@ -7,6 +7,7 @@ from typing import Dict, Iterable, List, Mapping, Optional
 
 from crawler.attempts import build_command_attempt_id
 from crawler.contracts.canonical_url import CanonicalUrlError, canonical_url_hash, canonicalize_url
+from crawler.metrics import metrics
 
 
 class FetchCommandError(ValueError):
@@ -142,9 +143,9 @@ class RedisStreamsFetchConsumer:
             raise FetchCommandError("FETCH_QUEUE_REDIS_URL or REDIS_URL is required")
         return cls(
             redis.from_url(redis_url, decode_responses=False),
-            stream=settings.get("FETCH_QUEUE_STREAM", "crawl:tasks"),
-            group=settings.get("FETCH_QUEUE_GROUP", "crawler-executor"),
-            consumer=settings.get("FETCH_QUEUE_CONSUMER") or socket.gethostname(),
+            stream=resolve_fetch_queue_stream(settings),
+            group=resolve_fetch_queue_group(settings),
+            consumer=resolve_fetch_queue_consumer(settings),
             read_count=settings.getint("FETCH_QUEUE_READ_COUNT", 10),
             block_ms=settings.getint("FETCH_QUEUE_BLOCK_MS", 5000),
             max_deliveries=settings.getint("FETCH_QUEUE_MAX_DELIVERIES", 3),
@@ -169,7 +170,9 @@ class RedisStreamsFetchConsumer:
             self.redis_client.xgroup_create(self.stream, self.group, id="0", mkstream=True)
         except Exception as exc:
             if "BUSYGROUP" not in str(exc):
+                metrics.record_dependency_health("redis", False)
                 raise
+        metrics.record_dependency_health("redis", True)
 
     def read(self) -> List[StreamFetchCommand]:
         if self._shutdown:
@@ -180,17 +183,27 @@ class RedisStreamsFetchConsumer:
         # 阻塞读之前再次检查停机标志：reclaim_pending() 期间可能进入停机态。
         if self._shutdown:
             return []
-        response = self.redis_client.xreadgroup(
-            self.group,
-            self.consumer,
-            {self.stream: ">"},
-            count=self.read_count,
-            block=self.block_ms,
-        )
+        try:
+            response = self.redis_client.xreadgroup(
+                self.group,
+                self.consumer,
+                {self.stream: ">"},
+                count=self.read_count,
+                block=self.block_ms,
+            )
+            metrics.record_dependency_health("redis", True)
+        except Exception:
+            metrics.record_dependency_health("redis", False)
+            raise
         return self._parse_response(response)
 
     def ack(self, message_id: str) -> None:
-        self.redis_client.xack(self.stream, self.group, message_id)
+        try:
+            self.redis_client.xack(self.stream, self.group, message_id)
+            metrics.record_dependency_health("redis", True)
+        except Exception:
+            metrics.record_dependency_health("redis", False)
+            raise
         self.acked_count += 1
 
     def reclaim_pending(self) -> List[StreamFetchCommand]:
@@ -206,7 +219,9 @@ class RedisStreamsFetchConsumer:
                 count=self.read_count,
             )
         except Exception:
+            metrics.record_dependency_health("redis", False)
             return []
+        metrics.record_dependency_health("redis", True)
         return self._parse_claim_response(response)
 
     def _parse_response(self, response: Iterable[object]) -> List[StreamFetchCommand]:
@@ -267,6 +282,75 @@ def _decode_value(value: object) -> str:
     if isinstance(value, bytes):
         return value.decode("utf-8", errors="replace")
     return str(value)
+
+
+def resolve_fetch_queue_consumer(settings, hostname_factory=socket.gethostname) -> str:
+    explicit = (settings.get("FETCH_QUEUE_CONSUMER") or "").strip()
+    if explicit:
+        return explicit
+
+    node_name = (settings.get("NODE_NAME") or "").strip()
+    pod_name = (settings.get("POD_NAME") or "").strip()
+    debug_mode = _settings_bool(settings, "CRAWLER_DEBUG_MODE", False)
+    template_name = "DEBUG_FETCH_QUEUE_CONSUMER_TEMPLATE" if debug_mode else "FETCH_QUEUE_CONSUMER_TEMPLATE"
+    template = (settings.get(template_name) or "").strip()
+
+    if template and node_name and pod_name:
+        rendered = render_runtime_template(template, node_name=node_name, pod_name=pod_name)
+        if rendered:
+            return rendered
+
+    if node_name and pod_name:
+        return f"{node_name}-{pod_name}"
+
+    return hostname_factory()
+
+
+def resolve_fetch_queue_stream(settings) -> str:
+    if not _settings_bool(settings, "CRAWLER_DEBUG_MODE", False):
+        return settings.get("FETCH_QUEUE_STREAM", "crawl:tasks")
+    template = settings.get("DEBUG_FETCH_QUEUE_STREAM_TEMPLATE", "crawl:tasks:debug:{node_name}")
+    return render_runtime_template(
+        template,
+        node_name=(settings.get("NODE_NAME") or "").strip(),
+        pod_name=(settings.get("POD_NAME") or "").strip(),
+    )
+
+
+def resolve_fetch_queue_group(settings) -> str:
+    if not _settings_bool(settings, "CRAWLER_DEBUG_MODE", False):
+        return settings.get("FETCH_QUEUE_GROUP", "crawler-executor")
+    template = settings.get("DEBUG_FETCH_QUEUE_GROUP_TEMPLATE", "crawler-executor-debug:{node_name}")
+    return render_runtime_template(
+        template,
+        node_name=(settings.get("NODE_NAME") or "").strip(),
+        pod_name=(settings.get("POD_NAME") or "").strip(),
+    )
+
+
+def render_runtime_template(template: str, *, node_name: str, pod_name: str) -> str:
+    return (
+        str(template)
+        .replace("${NODE_NAME}", node_name)
+        .replace("${POD_NAME}", pod_name)
+        .replace("$(NODE_NAME)", node_name)
+        .replace("$(POD_NAME)", pod_name)
+        .replace("{NODE_NAME}", node_name)
+        .replace("{POD_NAME}", pod_name)
+        .replace("{node_name}", node_name)
+        .replace("{pod_name}", pod_name)
+    ).strip()
+
+
+def _settings_bool(settings, name: str, default: bool) -> bool:
+    if hasattr(settings, "getbool"):
+        return settings.getbool(name, default)
+    value = settings.get(name, default)
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    return str(value).lower() in {"1", "true", "yes", "on"}
 
 
 def _required(fields: Mapping[str, str], key: str) -> str:

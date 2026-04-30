@@ -24,11 +24,21 @@ def _is_usable_ipv4(ip: str) -> bool:
     return parsed.version == 4 and not parsed.is_loopback and not parsed.is_unspecified
 
 
+def _is_all_interfaces(interface: str) -> bool:
+    return not interface.strip() or interface.strip().lower() in {"*", "all"}
+
+
 def _iter_ipv4_with_psutil(interface: str) -> List[str]:
     try:
         import psutil
     except ImportError:
         return []
+
+    if _is_all_interfaces(interface):
+        ips: List[str] = []
+        for addrs in psutil.net_if_addrs().values():
+            ips.extend(addr.address for addr in addrs if getattr(addr, "family", None) == socket.AF_INET)
+        return ips
 
     addrs = psutil.net_if_addrs().get(interface, [])
     return [addr.address for addr in addrs if getattr(addr, "family", None) == socket.AF_INET]
@@ -40,6 +50,13 @@ def _iter_ipv4_with_netifaces(interface: str) -> List[str]:
     except ImportError:
         return []
 
+    if _is_all_interfaces(interface):
+        ips: List[str] = []
+        for name in netifaces.interfaces():
+            addrs = netifaces.ifaddresses(name).get(netifaces.AF_INET, [])
+            ips.extend(addr.get("addr") for addr in addrs if addr.get("addr"))
+        return ips
+
     addrs = netifaces.ifaddresses(interface).get(netifaces.AF_INET, [])
     return [addr.get("addr") for addr in addrs if addr.get("addr")]
 
@@ -49,7 +66,11 @@ def discover_local_ips(
     exclude_ips: Optional[Iterable[str]] = None,
     ip_provider: Optional[Callable[[str], Iterable[str]]] = None,
 ) -> List[str]:
-    """Discover usable IPv4 addresses on a local network interface."""
+    """Discover usable IPv4 addresses on local network interface(s).
+
+    ``interface`` can be a concrete interface name, or ``all`` / ``*`` / empty
+    to scan every local interface visible to the process.
+    """
 
     provider = ip_provider
     if provider is None:
@@ -135,4 +156,3 @@ class LocalIpPool:
                 self.host_ip_map[host] = ip
                 return ip
         raise IpPoolError(f"all local IPs are blacklisted for host: {host}")
-

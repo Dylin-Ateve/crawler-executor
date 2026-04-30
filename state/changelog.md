@@ -6,6 +6,13 @@
 
 ## 2026-04-30
 
+### P3 / 004：K8s DaemonSet + hostNetwork 生产部署基础草案启动
+
+- **关联 spec**：`specs/004-p3-k8s-daemonset-hostnetwork/`
+- **新增能力**：建立 M3 规格草案，明确专用 crawler node pool、DaemonSet、`hostNetwork: true`、每 node 单 pod、Redis Streams 常驻消费、node / pod 精准调试和 Secret / ConfigMap 分层。
+- **关键决策**：关停语义选择 B（低频手动滚动、任务幂等、允许少量重复抓取、未完成 in-flight 留 PEL 后续 reclaim）；liveness 只检查进程 / reactor / metrics endpoint 基本存活，外部依赖短暂故障进入指标和告警；debug stream 的 `crawl_attempt` 仍进入正式 topic，但必须携带 `tier=debug` 供第五类过滤或标记。
+- **当前状态**：草案；尚未进入 plan / manifest 实现。
+
 ### P2 / 003：优雅停机与 PEL 移交语义落地（T015c 收尾）
 
 - **关联 spec**：`specs/003-p2-readonly-scheduler-queue/`
@@ -15,7 +22,9 @@
   - 实现侧 `RedisStreamsFetchConsumer` 暴露 `request_shutdown()` / `is_shutting_down` / `acked_count`；`FetchQueueSpider` 通过 `spider_closed` / `engine_stopped` 信号触发停机入口与退出总结；`FETCH_QUEUE_SHUTDOWN_DRAIN_SECONDS` 暴露到 settings。
   - 单元测试覆盖：consumer 停机后不再调用 `xreadgroup` / `xautoclaim`、`reclaim` 期间进入停机的边界、spider `spider_closed` / `engine_stopped` handler 行为与重复触发幂等、`start()` 在停机态立即退出。
   - 新增 `deploy/scripts/run-p2-graceful-shutdown-validation.sh`，覆盖 SIGTERM、SIGINT 同语义、SIGHUP 不进入优雅停机路径三阶段断言。
-- **当前状态**：T015c 实现与单元验证完成；目标节点端到端验证脚本待运维侧执行。
+- **目标节点验证结果**：`run-p2-graceful-shutdown-validation.sh` Phase 1 失败，SIGTERM 后 worker 退出耗时 68 秒，超过脚本设置的 `FETCH_QUEUE_SHUTDOWN_DRAIN_SECONDS=8` + 5 秒容差；PEL `count=1`、`xlen=1`，说明不清空 PEL 与可恢复底线满足。
+- **发现问题**：`fetch_queue_shutdown_signal_received` 实际在 `spider_closed` 阶段才记录，晚于 SIGTERM 到达；退出期间同一 `stream_message_id` 出现两次 `fetch_queue_response_observed`，PEL `max_times_delivered=2`，说明退出中的 worker 仍可能继续 `XAUTOCLAIM` / 重复处理。
+- **当前状态**：T015c 实现与单元验证完成，但严格 ADR-0009 / FR-022 语义未满足。团队确认当前 K8s 场景为低频手动滚动、任务幂等、允许少量重复抓取，因此当前实现作为过渡策略接受；M3 可先进入规格草案，不进入 manifest 实现。
 
 ## 2026-04-29
 

@@ -141,8 +141,10 @@ class ContentPersistencePipeline:
                 content_encoding=None,
                 metadata={**metadata, "compression": self.compression},
             )
+            metrics.record_dependency_health("oci", True)
             metrics.record_storage_upload(self.storage_client.provider, self.storage_client.bucket, "success")
         except StorageError as exc:
+            metrics.record_dependency_health("oci", False)
             metrics.record_storage_upload(self.storage_client.provider, self.storage_client.bucket, "failure")
             spider.logger.error(
                 "p1_storage_upload_failed url=%s storage_key=%s error=%s",
@@ -192,8 +194,10 @@ class ContentPersistencePipeline:
         validate_crawl_attempt(payload)
         try:
             self.publisher.publish_crawl_attempt(str(attempt_id), payload)
+            metrics.record_dependency_health("kafka", True)
             metrics.record_kafka_publish(self.publisher.topic, "success")
         except PublishError as exc:
+            metrics.record_dependency_health("kafka", False)
             metrics.record_kafka_publish(self.publisher.topic, "failure")
             spider.logger.error(
                 "p1_kafka_publish_failed url=%s attempt_id=%s storage_result=stored snapshot_id=%s storage_key=%s error=%s",
@@ -228,8 +232,10 @@ class ContentPersistencePipeline:
         validate_crawl_attempt(payload)
         try:
             self.publisher.publish_crawl_attempt(str(payload["attempt_id"]), payload)
+            metrics.record_dependency_health("kafka", True)
             metrics.record_kafka_publish(self.publisher.topic, "success")
         except PublishError as exc:
+            metrics.record_dependency_health("kafka", False)
             metrics.record_kafka_publish(self.publisher.topic, "failure")
             spider.logger.error(
                 "p1_kafka_publish_failed url=%s attempt_id=%s storage_result=%s error=%s",

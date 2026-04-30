@@ -1,0 +1,393 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: crawler-executor
+  labels:
+    app.kubernetes.io/name: crawler-executor
+    app.kubernetes.io/component: fetch-worker
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: crawler-executor
+      app.kubernetes.io/component: fetch-worker
+  updateStrategy:
+    type: OnDelete
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: crawler-executor
+        app.kubernetes.io/component: fetch-worker
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9410"
+        prometheus.io/path: /metrics
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      terminationGracePeriodSeconds: 30
+      nodeSelector:
+        scrapy-egress: "true"
+      tolerations:
+        - key: scrapy-egress
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+      containers:
+        - name: crawler-executor
+          image: crawler-executor:CHANGE_ME
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "scrapy", "crawl", "fetch_queue"]
+          ports:
+            - name: metrics
+              containerPort: 9410
+              hostPort: 9410
+              protocol: TCP
+            - name: health
+              containerPort: 9411
+              hostPort: 9411
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health/liveness
+              port: health
+              host: 127.0.0.1
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health/readiness
+              port: health
+              host: 127.0.0.1
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "1000m"
+              memory: "2Gi"
+            limits:
+              cpu: "4000m"
+              memory: "6Gi"
+          volumeMounts:
+            - name: crawler-runtime-config
+              mountPath: /etc/crawler/runtime
+              readOnly: true
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: FETCH_QUEUE_REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: crawler-executor-redis
+                  key: fetch_queue_redis_url
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: crawler-executor-redis
+                  key: redis_url
+            - name: KAFKA_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: crawler-executor-kafka
+                  key: username
+            - name: KAFKA_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: crawler-executor-kafka
+                  key: password
+            - name: FETCH_QUEUE_BACKEND
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: fetch_queue_backend
+            - name: FETCH_QUEUE_STREAM
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: fetch_queue_stream
+            - name: FETCH_QUEUE_GROUP
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: fetch_queue_group
+            - name: FETCH_QUEUE_CONSUMER_TEMPLATE
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: fetch_queue_consumer_template
+            - name: FETCH_QUEUE_READ_COUNT
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: fetch_queue_read_count
+            - name: FETCH_QUEUE_BLOCK_MS
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: fetch_queue_block_ms
+            - name: FETCH_QUEUE_MAX_DELIVERIES
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: fetch_queue_max_deliveries
+            - name: FETCH_QUEUE_CLAIM_MIN_IDLE_MS
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: fetch_queue_claim_min_idle_ms
+            - name: FETCH_QUEUE_SHUTDOWN_DRAIN_SECONDS
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: fetch_queue_shutdown_drain_seconds
+            - name: FETCH_QUEUE_MAX_MESSAGES
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: fetch_queue_max_messages
+            - name: CONCURRENT_REQUESTS
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: concurrent_requests
+            - name: CONCURRENT_REQUESTS_PER_DOMAIN
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: concurrent_requests_per_domain
+            - name: DOWNLOAD_DELAY
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: download_delay
+            - name: DOWNLOAD_TIMEOUT
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: download_timeout
+            - name: RETRY_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: retry_enabled
+            - name: RETRY_TIMES
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: retry_times
+            - name: FORCE_CLOSE_CONNECTIONS
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: force_close_connections
+            - name: CRAWL_INTERFACE
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: crawl_interface
+            - name: EXCLUDED_LOCAL_IPS
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: excluded_local_ips
+            - name: LOCAL_IP_POOL
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: local_ip_pool
+            - name: IP_SELECTION_STRATEGY
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: ip_selection_strategy
+            - name: IP_FAILURE_THRESHOLD
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: ip_failure_threshold
+            - name: IP_FAILURE_WINDOW_SECONDS
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: ip_failure_window_seconds
+            - name: IP_COOLDOWN_SECONDS
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: ip_cooldown_seconds
+            - name: REDIS_KEY_PREFIX
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: redis_key_prefix
+            - name: ENABLE_P1_PERSISTENCE
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: enable_p1_persistence
+            - name: OBJECT_STORAGE_PROVIDER
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: object_storage_provider
+            - name: OCI_OBJECT_STORAGE_BUCKET
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: oci_object_storage_bucket
+            - name: OCI_OBJECT_STORAGE_NAMESPACE
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: oci_object_storage_namespace
+            - name: OCI_OBJECT_STORAGE_REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: oci_object_storage_region
+            - name: OCI_OBJECT_STORAGE_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: oci_object_storage_endpoint
+            - name: OCI_AUTH_MODE
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: oci_auth_mode
+            - name: CONTENT_COMPRESSION
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: content_compression
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: kafka_bootstrap_servers
+            - name: KAFKA_SECURITY_PROTOCOL
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: kafka_security_protocol
+            - name: KAFKA_SASL_MECHANISM
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: kafka_sasl_mechanism
+            - name: KAFKA_SSL_CA_LOCATION
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: kafka_ssl_ca_location
+            - name: KAFKA_TOPIC_CRAWL_ATTEMPT
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: kafka_topic_crawl_attempt
+            - name: KAFKA_BATCH_SIZE
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: kafka_batch_size
+            - name: KAFKA_PRODUCER_RETRIES
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: kafka_producer_retries
+            - name: KAFKA_REQUEST_TIMEOUT_MS
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: kafka_request_timeout_ms
+            - name: KAFKA_DELIVERY_TIMEOUT_MS
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: kafka_delivery_timeout_ms
+            - name: KAFKA_FLUSH_TIMEOUT_MS
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: kafka_flush_timeout_ms
+            - name: PROMETHEUS_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: prometheus_port
+            - name: HEALTH_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: health_port
+            - name: READINESS_MAX_HEARTBEAT_AGE_SECONDS
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: readiness_max_heartbeat_age_seconds
+            - name: LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: log_level
+            - name: CRAWLER_PAUSED
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: crawler_paused
+            - name: CRAWLER_PAUSE_FILE
+              value: /etc/crawler/runtime/crawler_paused
+            - name: CRAWLER_PAUSE_POLL_SECONDS
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: crawler_pause_poll_seconds
+            - name: CRAWLER_DEBUG_MODE
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: crawler_debug_mode
+            - name: DEBUG_FETCH_QUEUE_STREAM_TEMPLATE
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: debug_fetch_queue_stream_template
+            - name: DEBUG_FETCH_QUEUE_GROUP_TEMPLATE
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: debug_fetch_queue_group_template
+            - name: DEBUG_FETCH_QUEUE_CONSUMER_TEMPLATE
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: debug_fetch_queue_consumer_template
+            - name: DEBUG_ATTEMPT_TIER
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: debug_attempt_tier
+      volumes:
+        - name: crawler-runtime-config
+          configMap:
+            name: crawler-executor-config
+            items:
+              - key: crawler_paused
+                path: crawler_paused

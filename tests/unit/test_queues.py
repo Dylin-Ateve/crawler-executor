@@ -1,6 +1,13 @@
 import pytest
 
-from crawler.queues import FetchCommandError, RedisStreamsFetchConsumer, parse_fetch_command
+from crawler.queues import (
+    FetchCommandError,
+    RedisStreamsFetchConsumer,
+    parse_fetch_command,
+    resolve_fetch_queue_consumer,
+    resolve_fetch_queue_group,
+    resolve_fetch_queue_stream,
+)
 
 
 def test_parse_fetch_command_requires_url_job_and_canonical_url():
@@ -73,6 +80,68 @@ def test_parse_fetch_command_accepts_json_payload_field():
     )
 
     assert command.url == "https://example.com"
+
+
+class DictSettings:
+    def __init__(self, values):
+        self.values = values
+
+    def get(self, name, default=None):
+        return self.values.get(name, default)
+
+
+def test_resolve_fetch_queue_consumer_prefers_explicit_value():
+    settings = DictSettings(
+        {
+            "FETCH_QUEUE_CONSUMER": "manual-worker",
+            "FETCH_QUEUE_CONSUMER_TEMPLATE": "${NODE_NAME}-${POD_NAME}",
+            "NODE_NAME": "node-a",
+            "POD_NAME": "pod-a",
+        }
+    )
+
+    assert resolve_fetch_queue_consumer(settings) == "manual-worker"
+
+
+def test_resolve_fetch_queue_consumer_renders_node_pod_template():
+    settings = DictSettings(
+        {
+            "FETCH_QUEUE_CONSUMER_TEMPLATE": "${NODE_NAME}-${POD_NAME}",
+            "NODE_NAME": "node-a",
+            "POD_NAME": "pod-a",
+        }
+    )
+
+    assert resolve_fetch_queue_consumer(settings) == "node-a-pod-a"
+
+
+def test_resolve_fetch_queue_consumer_defaults_to_node_pod_when_template_missing():
+    settings = DictSettings({"NODE_NAME": "node-a", "POD_NAME": "pod-a"})
+
+    assert resolve_fetch_queue_consumer(settings) == "node-a-pod-a"
+
+
+def test_resolve_fetch_queue_consumer_falls_back_to_hostname():
+    settings = DictSettings({})
+
+    assert resolve_fetch_queue_consumer(settings, hostname_factory=lambda: "host-a") == "host-a"
+
+
+def test_resolve_fetch_queue_debug_stream_group_and_consumer():
+    settings = DictSettings(
+        {
+            "CRAWLER_DEBUG_MODE": "true",
+            "DEBUG_FETCH_QUEUE_STREAM_TEMPLATE": "crawl:tasks:debug:{node_name}",
+            "DEBUG_FETCH_QUEUE_GROUP_TEMPLATE": "crawler-executor-debug:{node_name}",
+            "DEBUG_FETCH_QUEUE_CONSUMER_TEMPLATE": "${NODE_NAME}-${POD_NAME}-debug",
+            "NODE_NAME": "node-a",
+            "POD_NAME": "pod-a",
+        }
+    )
+
+    assert resolve_fetch_queue_stream(settings) == "crawl:tasks:debug:node-a"
+    assert resolve_fetch_queue_group(settings) == "crawler-executor-debug:node-a"
+    assert resolve_fetch_queue_consumer(settings) == "node-a-pod-a-debug"
 
 
 class FakeStreamRedis:
@@ -151,6 +220,18 @@ def test_stream_consumer_reads_reclaimed_pending_before_new_messages():
     assert len(entries) == 1
     assert entries[0].message_id == "3-0"
     assert entries[0].command.deliveries == 3
+
+
+def test_stream_consumer_records_redis_dependency_health(monkeypatch):
+    redis = FakeStreamRedis()
+    observed = []
+    monkeypatch.setattr("crawler.queues.metrics.record_dependency_health", lambda dependency, healthy: observed.append((dependency, healthy)))
+    consumer = RedisStreamsFetchConsumer(redis, stream="crawl:tasks", group="group", consumer="worker")
+
+    consumer.read()
+    consumer.ack("1-0")
+
+    assert ("redis", True) in observed
 
 
 class RecordingStreamRedis:

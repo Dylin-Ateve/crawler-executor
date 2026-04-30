@@ -30,6 +30,9 @@ class CrawlerMetrics:
             self.kafka_publishes_total = _NoopMetric()
             self.content_skips_total = _NoopMetric()
             self.fetch_queue_events_total = _NoopMetric()
+            self.fetch_queue_consumer_heartbeat_timestamp = _NoopMetric()
+            self.dependency_health_status = _NoopMetric()
+            self.dependency_health_events_total = _NoopMetric()
             return
 
         self.requests_total = Counter(
@@ -64,6 +67,20 @@ class CrawlerMetrics:
             "Total fetch queue events by result.",
             ["result"],
         )
+        self.fetch_queue_consumer_heartbeat_timestamp = Gauge(
+            "crawler_fetch_queue_consumer_heartbeat_timestamp_seconds",
+            "Unix timestamp for the latest fetch queue consumer loop heartbeat.",
+        )
+        self.dependency_health_status = Gauge(
+            "crawler_dependency_health_status",
+            "Latest dependency health status, 1 for healthy and 0 for unhealthy.",
+            ["dependency"],
+        )
+        self.dependency_health_events_total = Counter(
+            "crawler_dependency_health_events_total",
+            "Total dependency health observations by dependency and result.",
+            ["dependency", "result"],
+        )
 
     def record_response(self, host: str, status: str, egress_ip: str, duration_seconds: Optional[float]) -> None:
         self.requests_total.labels(host=host, status=status, egress_ip=egress_ip or "unknown").inc()
@@ -87,6 +104,14 @@ class CrawlerMetrics:
 
     def record_fetch_queue_event(self, result: str) -> None:
         self.fetch_queue_events_total.labels(result=result).inc()
+
+    def set_fetch_queue_consumer_heartbeat(self, timestamp_seconds: float) -> None:
+        self.fetch_queue_consumer_heartbeat_timestamp.set(timestamp_seconds)
+
+    def record_dependency_health(self, dependency: str, healthy: bool) -> None:
+        result = "success" if healthy else "failure"
+        self.dependency_health_status.labels(dependency=dependency).set(1 if healthy else 0)
+        self.dependency_health_events_total.labels(dependency=dependency, result=result).inc()
 
 
 metrics = CrawlerMetrics()

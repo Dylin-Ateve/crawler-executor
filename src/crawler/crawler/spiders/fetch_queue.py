@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import asyncio
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 import scrapy
 from scrapy import signals as scrapy_signals
 
+from crawler.health import mark_worker_initialized, record_consumer_heartbeat
 from crawler.metrics import metrics
 from crawler.queues import FetchCommand, RedisStreamsFetchConsumer
 
@@ -24,6 +27,11 @@ class FetchQueueSpider(scrapy.Spider):
         super().__init__(*args, **kwargs)
         self.max_messages = int(max_messages or 0)
         self.seen_messages = 0
+        self.paused = False
+        self.pause_file = ""
+        self.pause_poll_seconds = 5
+        self._pause_logged = False
+        self._pause_file_error_logged = False
         # ADR-0009 优雅停机相关运行态。
         self.shutdown_drain_seconds = 25
         self._shutdown_started_at = None
@@ -34,6 +42,9 @@ class FetchQueueSpider(scrapy.Spider):
         spider = super().from_crawler(crawler, *args, **kwargs)
         spider.consumer = RedisStreamsFetchConsumer.from_settings(crawler.settings)
         spider.default_max_messages = crawler.settings.getint("FETCH_QUEUE_MAX_MESSAGES", 0)
+        spider.pause_poll_seconds = crawler.settings.getint("CRAWLER_PAUSE_POLL_SECONDS", 5)
+        spider.paused = crawler.settings.getbool("CRAWLER_PAUSED", False)
+        spider.pause_file = crawler.settings.get("CRAWLER_PAUSE_FILE", "") or ""
         spider.shutdown_drain_seconds = crawler.settings.getint(
             "FETCH_QUEUE_SHUTDOWN_DRAIN_SECONDS", 25
         )
@@ -87,10 +98,25 @@ class FetchQueueSpider(scrapy.Spider):
 
     async def start(self):
         self.consumer.ensure_group()
+        self._record_consumer_heartbeat()
+        mark_worker_initialized()
         max_messages = self.max_messages or self.default_max_messages
         while True:
+            self._record_consumer_heartbeat()
             if self.consumer.is_shutting_down:
                 return
+            if self._is_paused():
+                if not self._pause_logged:
+                    self.logger.info(
+                        "fetch_queue_paused stream=%s group=%s",
+                        self.consumer.stream,
+                        self.consumer.group,
+                    )
+                    self._pause_logged = True
+                metrics.record_fetch_queue_event("paused")
+                await asyncio.sleep(self.pause_poll_seconds)
+                continue
+            self._pause_logged = False
             if max_messages and self.seen_messages >= max_messages:
                 return
             entries = self.consumer.read()
@@ -102,6 +128,7 @@ class FetchQueueSpider(scrapy.Spider):
                     return
                 continue
             for entry in entries:
+                self._record_consumer_heartbeat()
                 if self.consumer.is_shutting_down:
                     return
                 if max_messages and self.seen_messages >= max_messages:
@@ -138,6 +165,33 @@ class FetchQueueSpider(scrapy.Spider):
             dont_filter=True,
             meta=meta,
         )
+
+    @staticmethod
+    def _record_consumer_heartbeat() -> None:
+        timestamp = time.time()
+        record_consumer_heartbeat(now=timestamp)
+        metrics.set_fetch_queue_consumer_heartbeat(timestamp)
+
+    def _is_paused(self) -> bool:
+        if not self.pause_file:
+            return self.paused
+        try:
+            value = Path(self.pause_file).read_text(encoding="utf-8").strip().lower()
+        except OSError as exc:
+            if not self._pause_file_error_logged:
+                self.logger.warning(
+                    "fetch_queue_pause_file_read_failed path=%s error=%s",
+                    self.pause_file,
+                    exc,
+                )
+                self._pause_file_error_logged = True
+            return self.paused
+        self._pause_file_error_logged = False
+        if value in {"1", "true", "yes", "on"}:
+            return True
+        if value in {"0", "false", "no", "off", ""}:
+            return False
+        return self.paused
 
     def parse(self, response):
         content_type = self._content_type(response)

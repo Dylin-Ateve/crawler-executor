@@ -1,4 +1,13 @@
-from crawler.health import RedisHealthStore, contains_captcha, failure_reason_for_status
+from crawler.health import (
+    RedisHealthStore,
+    RuntimeHealthState,
+    build_liveness_payload,
+    build_readiness_payload,
+    contains_captcha,
+    failure_reason_for_status,
+    mark_worker_initialized,
+    record_consumer_heartbeat,
+)
 
 
 class FakeRedis:
@@ -79,3 +88,50 @@ def test_failure_reason_for_status():
     assert failure_reason_for_status(429) == "HTTP_429"
     assert failure_reason_for_status(200) is None
 
+
+def test_liveness_payload_is_ok_when_process_state_is_live():
+    status_code, payload = build_liveness_payload(RuntimeHealthState(started_at=1000.0, live=True))
+
+    assert status_code == 200
+    assert payload["status"] == "ok"
+    assert payload["uptime_seconds"] >= 0
+
+
+def test_liveness_payload_fails_when_process_state_is_not_live():
+    status_code, payload = build_liveness_payload(RuntimeHealthState(started_at=1000.0, live=False))
+
+    assert status_code == 503
+    assert payload["status"] == "failed"
+
+
+def test_readiness_payload_is_ready_after_initialization_and_recent_heartbeat():
+    state = RuntimeHealthState(started_at=1000.0)
+    mark_worker_initialized(state, now=1010.0)
+    record_consumer_heartbeat(state, now=1020.0)
+
+    status_code, payload = build_readiness_payload(state, max_heartbeat_age_seconds=30, now=1025.0)
+
+    assert status_code == 200
+    assert payload["status"] == "ready"
+    assert payload["worker_initialized"] is True
+
+
+def test_readiness_payload_fails_when_worker_not_initialized():
+    state = RuntimeHealthState(started_at=1000.0)
+    record_consumer_heartbeat(state, now=1020.0)
+
+    status_code, payload = build_readiness_payload(state, max_heartbeat_age_seconds=30, now=1025.0)
+
+    assert status_code == 503
+    assert payload["status"] == "not_ready"
+
+
+def test_readiness_payload_fails_when_heartbeat_is_stale():
+    state = RuntimeHealthState(started_at=1000.0)
+    mark_worker_initialized(state, now=1010.0)
+    record_consumer_heartbeat(state, now=1020.0)
+
+    status_code, payload = build_readiness_payload(state, max_heartbeat_age_seconds=30, now=1060.1)
+
+    assert status_code == 503
+    assert payload["status"] == "not_ready"

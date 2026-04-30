@@ -180,3 +180,27 @@ def test_start_loop_exits_when_consumer_in_shutdown_at_entry():
 
     requests = asyncio.run(collect())
     assert requests == []
+
+
+def test_pause_file_overrides_env_pause_flag(tmp_path):
+    spider = _build_spider()
+    pause_file = tmp_path / "crawler_paused"
+    spider.pause_file = str(pause_file)
+    spider.paused = False
+
+    pause_file.write_text("true\n", encoding="utf-8")
+    assert spider._is_paused() is True
+
+    pause_file.write_text("false\n", encoding="utf-8")
+    assert spider._is_paused() is False
+
+
+def test_pause_file_read_failure_falls_back_to_env_flag(tmp_path, caplog):
+    spider = _build_spider()
+    spider.pause_file = str(tmp_path / "missing")
+    spider.paused = True
+
+    with caplog.at_level("WARNING", logger=spider.logger.name):
+        assert spider._is_paused() is True
+
+    assert any("fetch_queue_pause_file_read_failed" in record.message for record in caplog.records)
