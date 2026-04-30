@@ -10,7 +10,7 @@ crawler-executor 的终态边界是：
 
 > 抓取指令进 → 原始字节落盘 + 单一 `crawl_attempt` 事件出。
 
-本系统持有执行体本体、对象存储中属于本次抓取的原始字节、本节点短窗口运营态、事件总线发布者身份和执行级指标。
+本系统持有执行体本体、对象存储中属于本次抓取的原始字节、本节点短窗口运营态 / 执行安全状态、事件总线发布者身份和执行级指标。
 
 本系统不持有 URL 队列写入侧、PG/ClickHouse 事实层、Host 画像聚合、解析任务派发、内容加工状态和业务级闭环指标。
 
@@ -19,7 +19,7 @@ crawler-executor 的终态边界是：
 下列职责不属于第二类执行系统。任何“临时内嵌更方便”的方案都必须先通过 ADR 说明边界升级或例外原因。
 
 - 不选择 URL。
-- 不决定优先级、频率和重抓窗口。
+- 不决定业务优先级、业务抓取频率和重抓窗口；仅允许为防封和出口健康做短窗口执行安全 pacing / cooldown。
 - 不做结构化抽取。
 - 不评估内容质量。
 - 不持有事实层数据库或画像存储。
@@ -79,14 +79,14 @@ crawler-executor 的终态边界是：
 1. 第六类写入 Redis 队列并下发抓取参数。
 2. crawler-executor 只读消费 URL。
 3. 入口处执行 canonical URL 归一化，生成 `url_hash`。
-4. 创建 `attempt_id`，按 Host 粘性策略选择本地出口 IP。
+4. 创建 `attempt_id`，按 host-aware sticky-pool / adaptive egress policy 选择本地出口 IP。
 5. 发起 HTTP 请求；Scrapy 内部 retry 归属同一个 `attempt_id`。
 6. 判断响应类型：
    - 200 HTML：计算 `content_sha256`，生成 `snapshot_id`，gzip 后上传对象存储。
    - 非 HTML：不写对象存储，标记 `content_result=non_snapshot`、`storage_result=skipped`。
    - fetch 失败：标记 `fetch_result=failed`，后续结果为 skipped。
 7. 发布单一 `crawl_attempt` 事件，无论成功、失败或跳过均发布。
-8. 本地更新短窗口 IP 健康状态，并以事件或指标形式暴露执行态。
+8. 本地或 TTL 更新短窗口执行安全状态，如 `(host, ip)` backoff、IP cooldown、host slowdown，并以指标形式暴露执行态。
 9. 第三类订阅事件后按 `storage_key` 自取内容。
 10. 第五类订阅事件并投影事实层、Host/Site 画像与审计记录。
 
@@ -95,26 +95,28 @@ crawler-executor 的终态边界是：
 ### 6.1 多出口 IP
 
 - 启动时发现节点本地辅助 IPv4 池。
-- 默认按 Host 粘性选择出口 IP。
-- 选择时避开本节点短窗口不可用 IP。
-- 当某 Host 无可用 IP 时，本系统只上抛失败事实；是否放弃或延后由第六类决定。
+- 生产方向默认采用 host-aware sticky-pool；P0 / staging 可保留 `STICKY_BY_HOST` 历史策略。
+- 选择时避开本节点短窗口不可用 IP，并遵守 `(host, ip)` pacing、IP cooldown、host slowdown 等执行安全状态。
+- 当某 Host / 出口池短窗口不可用时，本系统只允许有界本地延迟；是否业务级放弃、延后或重排仍由第六类决定。
 
 ### 6.2 IP 健康检查
 
-- 本系统持有短窗口执行运营态，用于本节点避开短期不可用 IP。
+- 本系统持有短窗口执行运营态，用于本节点避开短期不可用 IP，并区分 `(host, ip)`、`ip`、`host`、`host, asn/cidr` 不同退避维度。
 - 长期画像事实归第五类持有。
-- 失败信号包括 HTTP 拒绝类状态码、连接级失败、超时和明确 captcha 特征。
+- 失败信号包括 HTTP 拒绝类状态码、连接级失败、超时、5xx 和明确 CAPTCHA / challenge / 反爬页特征。
 
 ### 6.3 Politeness
 
-- 支持全局并发、单 Host 并发、单 IP 并发、请求间隔、随机抖动、重试边界、下载超时和 UA 策略。
+- 支持全局并发、sticky-pool、per-(host, ip) pacer、单 IP token / cooldown、host 级降速、请求间隔、随机抖动、重试边界、下载超时和 UA 策略。
 - 显式忽略 `robots.txt`，但必须保留合理并发和请求间隔。
-- 运行时参数终态由控制平面按 Tier / Site 下发；本系统只保留兜底默认值。
+- 静态 `DOWNLOAD_DELAY` / `CONCURRENT_REQUESTS_PER_DOMAIN` 只能作为 fallback；生产方向采用观测驱动的自适应防封闭环。
+- 运行时参数终态由控制平面按 Tier / Site / HostGroup 下发；本系统只保留兜底默认值。
 
 ### 6.4 调度
 
 - Redis / scrapy-redis 形态只作为第六类下发接口。
 - 本系统只读消费，不写入新 URL，不维护跨节点去重过滤器。
+- 本系统允许写入 TTL、命名空间隔离的短窗口执行安全状态，但不得表达 URL 选择、优先级、重抓窗口、去重结果或长期画像事实。
 - 页面链接发现不进入本系统队列。
 
 ### 6.5 存储
@@ -137,7 +139,8 @@ crawler-executor 的终态边界是：
 
 - 抓取速率与 HTTP 结果分布。
 - 响应时间分布。
-- 本地 IP 池规模、不可用 IP 数、Host 粘性命中率。
+- 本地 IP 池规模、不可用 IP 数、sticky-pool 命中率、per-(host, ip) backoff、IP cooldown、host slowdown。
+- challenge / soft-ban / 5xx rate 按 host、egress IP、可选 ASN / CIDR 分桶聚合。
 - Redis、对象存储、事件总线依赖健康度。
 - 节点本地出站缓冲水位。
 
@@ -191,16 +194,16 @@ Host 画像、业务级闭环指标和事实层看板归第五类。
 
 - D-DEBT-1：URL 归一化库 Python 实现先由本系统持有，待契约仓库提供官方实现后迁移。
 - D-DEBT-2：事件 topic 与 schema 在契约仓库就绪后迁入契约托管。
-- D-DEBT-3：Politeness 参数从 settings 内嵌默认值迁移到控制平面运行时下发。
+- D-DEBT-3：Politeness 从静态 settings 默认值迁移到自适应防封闭环，并最终由控制平面运行时覆盖。
 - D-DEBT-4：`content_sha256` 当前只覆盖 HTML 快照场景；如上层要求所有响应统一 Raw 指纹，需扩展独立字段。
-- D-DEP-1：host×ip 黑名单事实/缓存切分边界由第五类发布画像契约后回填。
+- D-DEP-1：短窗口执行安全状态与第五类 Host / IP / ASN 长期画像事实的切分契约待回填。
 
 ## 10. 系统级验收标准
 
 ### 功能性
 
-1. 单节点能稳定使用约 44 个出口 IP 轮换抓取。
-2. 被封 IP 在配置时间内进入冷却，恢复期试探机制正常。
+1. 单节点能稳定使用节点实际可用出口 IP 池轮换抓取，不以 P0 的 44 个 IP 作为终态上限。
+2. 被封或疑似受损的 `(host, ip)`、IP、host 在配置时间内进入对应退避 / 冷却，恢复期试探机制正常。
 3. HTML 完整落盘到对象存储，无字节丢失。
 4. 每次抓取尝试均有 `crawl_attempt` 事件，无论成功失败。
 5. 快照场景事件携带 `storage_key`、`storage_etag`、`content_sha256` 和 `snapshot_id`。
@@ -225,12 +228,12 @@ Host 画像、业务级闭环指标和事实层看板归第五类。
 
 | 风险 | 影响 | 对策 |
 |---|---|---|
-| 整段 VPC 子网被源站封禁 | 单节点所有 IP 同时失效 | 长期分散 region / 云厂商 / ASN |
+| 整段 VPC 子网被源站封禁 | 单节点所有 IP 同时失效 | 长期分散 region / 云厂商 / ASN；执行层提供 ASN / CIDR 分桶观测和短窗口软上限 |
 | 冷启动 URL 规模压垮 Redis | 第六类队列写入和本系统消费受阻 | 与第六类协同分片、磁盘队列和反压协议 |
 | 对象存储小文件性能问题 | 上传、列举或生命周期操作变慢 | 路径前缀打散，超热场景再评估批量打包 |
 | 事件总线短暂不可用 | 发布失败、本地缓冲堆积 | 节点本地 queue、重试、高水位告警 |
 | 对象存储上传失败 | 下游无法读取快照 | 发布 `storage_result=failed` 事件，不携带对象引用 |
-| 高并发且忽略 robots | 被封概率和合规风险上升 | 保留 politeness、Host 粘性、UA 策略和控制平面停抓 |
+| 高并发且忽略 robots | 被封概率和合规风险上升 | 保留自适应 politeness、sticky-pool、软封禁反馈、UA 策略和控制平面停抓 |
 | Redis 单点故障 | 队列读取中断或短窗口状态丢失 | Redis 高可用、本地 fallback、事实判定归第五类 |
 | 职责渗透回流 | 第二类边界失真 | 通过 Architecture Gate 和 ADR Gate 阻断 |
 | 法律 / ToS 风险 | 法律纠纷 | 法务评估、公开数据优先、紧急停抓通道 |

@@ -6,6 +6,13 @@
 
 ## 2026-04-30
 
+### ADR-0012：自适应 Politeness 与出口并发控制边界
+
+- **关联 ADR**：`state/decisions/0012-adaptive-politeness-and-egress-concurrency.md`
+- **新增决策**：生产方向从静态 per-host rate cap / `STICKY_BY_HOST = host -> 1 IP` 调整为自适应防封闭环；P0 / staging 可保留历史策略，生产需采用 host-aware sticky-pool。
+- **边界澄清**：crawler-executor 仍不得写 URL 队列、优先级、去重或长期 Host / IP / ASN 画像事实；允许写入 TTL、命名空间隔离的短窗口执行安全状态，如 `(host, ip)` backoff、IP cooldown、host slowdown 和可选 `(host, asn/cidr)` soft limit。
+- **后续影响**：004 继续暂停；下一步先新建自适应 Politeness 与出口并发控制 spec，补齐 sticky-pool、per-(host, ip) downloader slot、软封禁反馈、本地有界延迟和相关指标后，再恢复 K8s 部署验证。
+
 ### P3 / 004：K8s DaemonSet + hostNetwork 生产部署基础暂停并记录现场
 
 - **关联 spec**：`specs/004-p3-k8s-daemonset-hostnetwork/`

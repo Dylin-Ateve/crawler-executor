@@ -38,6 +38,14 @@
 - **恢复条件**：后续新 spec 明确并补齐生产功能缺口；Redis PING、Kafka publish smoke、Object Storage 权限和真实 ConfigMap 审核通过后，再恢复 DaemonSet dry-run 与目标集群验证。
 - **验收信号**：节点扩缩容时 worker 自动跟随；liveness 仅反映进程 / reactor / metrics endpoint 基本存活；Kafka / Redis / OCI 依赖异常通过 Prometheus 指标和告警反映，不因短暂抖动触发探针失败。
 
+### M3a：自适应 Politeness 与出口并发控制
+
+- **目标**：在大出口 IP 池下补齐生产防封与吞吐模型，包括 host-aware sticky-pool、per-(host, ip) downloader slot、IP 级 cooldown、host 级降速、软封禁反馈和有界本地延迟。
+- **状态**：ADR 已接受，spec 待新建。
+- **依赖 ADR**：ADR-0012。
+- **对应 spec**：待新建。
+- **验收信号**：同一 host 可在 K 个出口身份间受控轮转；429 / CAPTCHA / challenge / 反爬 200 页能按 `(host, ip)`、`ip`、`host` 维度触发不同退避；本地 delayed buffer 有容量和时间上限，buffer 满时停止 `XREADGROUP`；不会写 URL 队列、优先级或长期画像事实。
+
 ### M4：控制平面策略运行时覆盖
 
 - **目标**：Politeness、Tier、Site、HostGroup、紧急停抓等策略从控制平面下发并覆盖本地默认值。
@@ -58,19 +66,20 @@
 |---|---|---|---|
 | D-DEBT-1 | URL 归一化库 Python 实现先由本系统持有 | 当前保留在 `src/crawler/crawler/contracts/canonical_url.py` | 契约仓库提供官方 Python 实现和共享黄金测试集 |
 | D-DEBT-2 | 事件 topic 与 schema 暂在本仓库 | 当前位于 `specs/002-p1-content-persistence/contracts/` | 系统群契约仓库建成并接管事件 schema |
-| D-DEBT-3 | Politeness 参数仍以内嵌默认值为主 | 当前由 Scrapy settings 承载 | 控制平面策略下发链路可用 |
+| D-DEBT-3 | Politeness 仍以静态 settings 默认值为主 | 先按 ADR-0012 补齐自适应防封闭环 | 控制平面策略下发链路可用 |
 | D-DEBT-4 | `content_sha256` 只覆盖 HTML 快照场景 | 当前仅在 `storage_result=stored` 时计算 | 上层架构要求所有响应统一 Raw 指纹 |
-| D-DEP-1 | host×ip 黑名单事实/缓存边界待第五类契约 | 当前以本系统本地短窗口判断为准 | 第五类发布画像事实与执行缓存切分契约 |
+| D-DEP-1 | 短窗口执行安全状态与第五类长期画像事实边界待契约化 | 当前以本系统本地短窗口判断为准 | 第五类发布 Host / IP / ASN 画像事实与执行缓存切分契约 |
 
 ## 3. 未完成关键生产能力
 
 1. Redis 只读边界审计补强：在现有 key diff + `XLEN` 前后对比之外，增加允许状态变化清单和更宽 audit pattern。
 2. T015c 严格优雅停机收口：更早设置 shutdown flag，确保 SIGTERM 后立即停止 `XREADGROUP` / `XAUTOCLAIM`，并明确 drain deadline 是否强制退出。
-3. K8s DaemonSet + hostNetwork 部署。004 已暂停，等待功能缺口补齐后恢复。
-4. Grafana 基础看板、告警和运维 SOP。
-5. 24 小时稳定性压测、30-50 pages/sec 单节点目标验证。
-6. 控制平面策略运行时覆盖。
-7. 本地出站事件缓冲和 Kafka 故障补偿。
+3. 自适应 Politeness 与出口并发控制：sticky-pool、per-(host, ip) pacer、IP cooldown、host slowdown、软封禁反馈和本地有界延迟。
+4. K8s DaemonSet + hostNetwork 部署。004 已暂停，等待功能缺口补齐后恢复。
+5. Grafana 基础看板、告警和运维 SOP。
+6. 24 小时稳定性压测、30-50 pages/sec 单节点目标验证。
+7. 控制平面策略运行时覆盖。
+8. 本地出站事件缓冲和 Kafka 故障补偿。
 
 ## 4. 明确后置或暂不规划
 
@@ -86,7 +95,9 @@
 
 ## 5. 下一阶段建议
 
-004 已暂停，不继续推进生产部署。下一步应先围绕用户发现的功能性遗漏新建 spec，明确缺口、验收标准和与现有 P2 / M3 契约的关系。M3 第一版仍按 T015c 过渡运行假设设计：低频手动滚动、任务幂等、允许少量重复抓取、PEL 可恢复。若后续滚动重启频率提高或重复抓取不可接受，应先修正严格优雅停机入口与 drain deadline，再恢复 004 部署推进。
+004 已暂停，不继续推进生产部署。下一步应按 ADR-0012 新建自适应 Politeness 与出口并发控制 spec，明确 sticky-pool、per-(host, ip) pacer、IP cooldown、host slowdown、软封禁反馈、本地有界延迟和 Redis 执行态写入边界。该 spec 收口后，再恢复 004 的 ConfigMap 审核、DaemonSet dry-run 与目标集群验证。
+
+M3 第一版仍按 T015c 过渡运行假设设计：低频手动滚动、任务幂等、允许少量重复抓取、PEL 可恢复。若后续滚动重启频率提高或重复抓取不可接受，应先修正严格优雅停机入口与 drain deadline，再恢复 004 部署推进。
 
 D-DEBT-5（只读边界 audit pattern 加宽）按现状层债务跟进，不阻塞 M3 启动。
 

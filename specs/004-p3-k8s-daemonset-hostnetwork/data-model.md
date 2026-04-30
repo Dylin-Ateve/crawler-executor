@@ -57,8 +57,8 @@ DaemonSet 在每个 crawler node 上运行的执行 pod。
 | `FETCH_QUEUE_MAX_DELIVERIES` | 最大投递次数。 |
 | `FETCH_QUEUE_SHUTDOWN_DRAIN_SECONDS` | 退出总结窗口。 |
 | `DOWNLOAD_TIMEOUT` | Scrapy 下载超时。 |
-| `CONCURRENT_REQUESTS` | 全局并发，由 IP 池规模推导。 |
-| `CONCURRENT_REQUESTS_PER_DOMAIN` | 单域名并发。 |
+| `CONCURRENT_REQUESTS` | 全局并发，由 IP 池规模、sticky-pool 和 per-IP 并发上限共同推导。 |
+| `CONCURRENT_REQUESTS_PER_DOMAIN` | 历史 / fallback 单域名并发；恢复 004 前需按 ADR-0012 重新审核。 |
 | `CRAWL_INTERFACE` | M3 生产第一版默认 `enp0s5`；`all` / `*` 仅作为显式全接口诊断能力。 |
 | `EXCLUDED_LOCAL_IPS` | 不参与出口选择的本地 IP。 |
 | `CRAWLER_PAUSED` | 最小停抓开关启动默认值。 |
@@ -72,8 +72,10 @@ pod 启动时生成的节点本地 IP 池。
 |---|---|
 | `discovered_ips` | 从 host network 扫描得到的本地 IPv4。 |
 | `excluded_ips` | 由配置排除。 |
-| `active_ips` | `discovered_ips - excluded_ips - blacklisted_ips`。 |
-| `blacklisted_ips` | P0 短窗口黑名单状态。 |
+| `active_ips` | `discovered_ips - excluded_ips - cooling_down_ips`。 |
+| `cooling_down_ips` | 短窗口 IP cooldown 状态。 |
+| `host_ip_backoff` | `(host, ip)` 维度的短窗口 backoff / next-allowed-at；由后续新 spec 定义。 |
+| `host_slowdown` | host 维度的短窗口降速状态；由后续新 spec 定义。 |
 | `ip_count` | `active_ips` 数量，用于并发推导和指标。 |
 
 运行期新增 / 删除 NIC 不自动生效，M3 不做周期性 rescan；需删除目标 pod，由 DaemonSet 重建后在新进程启动时重新扫描。

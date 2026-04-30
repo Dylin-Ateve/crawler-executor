@@ -218,8 +218,8 @@ M3 的目标是把 crawler-executor 推进到 K8s 集群中的节点级常驻部
 M3 第一版不把具体 CPU / memory 数值写死在 spec 中，但 plan 必须按以下关系推导：
 
 - `ip_count = len(discovered_local_ip_pool - excluded_ips)`。
-- `CONCURRENT_REQUESTS = min(ip_count * per_ip_concurrency, global_cap)`。
-- `CONCURRENT_REQUESTS_PER_DOMAIN` 与 politeness 策略独立配置，不得仅按 IP 数量线性放大。
+- `CONCURRENT_REQUESTS` 第一版仍可按 `min(ip_count * per_ip_concurrency, global_cap)` 推导，但恢复 004 前必须按 ADR-0012 重新审核与 sticky-pool、per-(host, ip) pacer、IP cooldown 和 host slowdown 的关系。
+- `CONCURRENT_REQUESTS_PER_DOMAIN` 与 `DOWNLOAD_DELAY` 不再视为生产 politeness 主模型；004 恢复时只能作为 fallback 参数保留。
 - CPU / memory requests 必须覆盖目标并发、Kafka producer flush、对象存储上传和 gzip 压缩开销。
 
 ## 成功标准

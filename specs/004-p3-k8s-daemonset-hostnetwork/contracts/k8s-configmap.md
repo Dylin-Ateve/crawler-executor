@@ -67,11 +67,13 @@ FETCH_QUEUE_CLAIM_MIN_IDLE_MS >= terminationGracePeriodSeconds * 1000 + safety_m
 
 ## Scrapy 抓取与并发参数
 
+004 当前已暂停。下表保留 M3 部署基础第一版参数，但恢复 004 前必须按 ADR-0012 重新审核并发与 politeness 参数：生产方向不再把 `CONCURRENT_REQUESTS_PER_DOMAIN` / `DOWNLOAD_DELAY` 当作主要防封模型，而应由后续新 spec 定义 sticky-pool、per-(host, ip) pacer、IP cooldown、host slowdown 和本地有界延迟。
+
 | key | 映射环境变量 | 建议值 | 说明 |
 |---|---|---|---|
-| `concurrent_requests` | `CONCURRENT_REQUESTS` | 按公式推导 | 建议 `min(ip_count * per_ip_concurrency, global_cap)`。 |
-| `concurrent_requests_per_domain` | `CONCURRENT_REQUESTS_PER_DOMAIN` | `4` | 独立于 IP 池规模的 politeness 控制。 |
-| `download_delay` | `DOWNLOAD_DELAY` | `0.1` | 维持 P0 / P2 默认。 |
+| `concurrent_requests` | `CONCURRENT_REQUESTS` | 按公式推导 | 暂按 `min(ip_count * per_ip_concurrency, global_cap)`；恢复 004 前需纳入 sticky-pool 和 per-IP token / cooldown。 |
+| `concurrent_requests_per_domain` | `CONCURRENT_REQUESTS_PER_DOMAIN` | `4` | 历史 / fallback 参数，不作为生产单 host 主并发上限。 |
+| `download_delay` | `DOWNLOAD_DELAY` | `0.1` | 历史 / fallback 参数，不作为生产自适应防封主模型。 |
 | `download_timeout` | `DOWNLOAD_TIMEOUT` | `30` | Scrapy 下载超时；M3 关停语义 B 不要求 drain 覆盖该值。 |
 | `retry_enabled` | `RETRY_ENABLED` | `true` | 是否启用 Scrapy retry。 |
 | `retry_times` | `RETRY_TIMES` | `2` | 与当前 Scrapy 默认验证口径一致。 |
@@ -84,10 +86,10 @@ FETCH_QUEUE_CLAIM_MIN_IDLE_MS >= terminationGracePeriodSeconds * 1000 + safety_m
 | `crawl_interface` | `CRAWL_INTERFACE` | `enp0s5` | M3 生产第一版固定扫描 `enp0s5`；`all` / `*` 仅作为显式全接口诊断能力。 |
 | `excluded_local_ips` | `EXCLUDED_LOCAL_IPS` | 按节点环境填写 | 逗号分隔，排除保留 / 禁用 / 管理 IP。 |
 | `local_ip_pool` | `LOCAL_IP_POOL` | 空 | 生产默认不显式配置，优先启动时扫描；仅用于 debug 或回退。 |
-| `ip_selection_strategy` | `IP_SELECTION_STRATEGY` | `STICKY_BY_HOST` | 复用 P0 策略。 |
-| `ip_failure_threshold` | `IP_FAILURE_THRESHOLD` | `5` | P0 IP health 参数。 |
-| `ip_failure_window_seconds` | `IP_FAILURE_WINDOW_SECONDS` | `300` | P0 IP health 参数。 |
-| `ip_cooldown_seconds` | `IP_COOLDOWN_SECONDS` | `1800` | P0 IP blacklist 冷却时间。 |
+| `ip_selection_strategy` | `IP_SELECTION_STRATEGY` | `STICKY_BY_HOST` | 仅作为 P0 / staging / 历史验证默认；生产恢复 004 前需由 ADR-0012 新 spec 替换为 host-aware sticky-pool。 |
+| `ip_failure_threshold` | `IP_FAILURE_THRESHOLD` | `5` | 历史 IP health 参数；后续需区分 `(host, ip)`、`ip`、`host` 维度。 |
+| `ip_failure_window_seconds` | `IP_FAILURE_WINDOW_SECONDS` | `300` | 历史 IP health 参数。 |
+| `ip_cooldown_seconds` | `IP_COOLDOWN_SECONDS` | `1800` | 历史 IP cooldown 参数；生产需补充软封禁反馈和恢复试探。 |
 | `redis_key_prefix` | `REDIS_KEY_PREFIX` | `crawler` | P0 IP health key 前缀，不包含 Redis 连接信息。 |
 
 ## P1 持久化与 Kafka 非敏感参数

@@ -62,6 +62,8 @@
 | [0008](0008-kafka-publish-failure-not-in-max-deliveries-terminal-semantics.md) | Kafka 发布失败不进入最大投递次数终态语义 | 已接受 | 2026-04-29 |
 | [0009](0009-graceful-shutdown-and-pel-handover.md) | 优雅停机与 PEL 移交语义 | 已接受 | 2026-04-30 |
 | [0010](0010-system-group-class-2-positioning.md) | crawler-executor 锁定为系统群第二类的纯粹实现 | 已接受 | 2026-04-29 |
+| [0011](0011-k8s-rollout-uses-pel-recovery-shutdown-posture.md) | K8s 低频滚动采用 PEL 可恢复的关停姿态 | 已接受 | 2026-04-30 |
+| [0012](0012-adaptive-politeness-and-egress-concurrency.md) | 自适应 Politeness 与出口并发控制边界 | 已接受 | 2026-04-30 |
 
 ## 待回补 ADR 候选
 
