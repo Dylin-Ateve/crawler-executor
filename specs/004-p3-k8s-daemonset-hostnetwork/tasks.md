@@ -2,6 +2,22 @@
 
 **输入**：`spec.md`、`plan.md`、`research.md`、`data-model.md`  
 **前置条件**：P2 Redis Streams 队列消费目标节点验证通过；ADR-0011 已接受；具备至少 1-2 台 crawler 测试 node。
+**当前状态**：已暂停。2026-04-30 目标集群资源准备过程中发现生产上线前仍有功能性遗漏，004 暂停在部署基础准备阶段；待后续新 spec 补齐功能缺口后恢复。
+
+## 暂停现场
+
+- OKE node pool：`scrapy-node-pool`。
+- subnet：`subnetCollection`。
+- node 数量：2。
+- node label：`scrapy-egress=true` 已确认存在。
+- taint：暂未配置，符合第一轮实测策略。
+- host interface：`enp0s5`。
+- 每 node IPv4 数量：约 65，生产 profile 按 `M3_IP_POOL_EXPECTED_RANGE=60-70` 验证。
+- Redis TCP：`aaajqtckmia7tfijfk75vfiz4rw4goapkg3geaw2tmaaog4ogcwh6ta-p.redis.us-phoenix-1.oci.oraclecloud.com:7379` 已连通；协议级 `PING` 待补。
+- namespace：`crawler-executor`。
+- Secret：`crawler-executor-redis` 与 `crawler-executor-kafka` 已创建，预期 key 均存在。
+- Kafka：连通性暂认定可用，发布验证待补。
+- ConfigMap / DaemonSet：未 apply。
 
 ## 阶段 1：规格与部署决策
 
@@ -57,6 +73,8 @@
 
 ## 阶段 7：目标集群验证
 
+- [x] T035a 记录目标集群第一轮资源现场：`scrapy-node-pool`、`subnetCollection`、`scrapy-egress=true`、`enp0s5`、每 node 约 65 个 IPv4、namespace 与 Redis/Kafka Secret。
+- [ ] T035b 恢复 004 前，完成新 spec 对生产功能性缺口的补齐与评审。
 - [ ] T035 在至少 1 个 crawler node 上部署 DaemonSet，验证 pod 使用 hostNetwork 并发现 IP 池（审计脚本已准备：`deploy/scripts/run-m3-k8s-daemonset-audit.sh`，需目标集群执行）。
 - [ ] T036 在至少 2 个 crawler node 上部署 DaemonSet，验证每 node 一个 pod（审计脚本已准备：`deploy/scripts/run-m3-k8s-daemonset-audit.sh`，需目标集群执行）。
 - [ ] T037 向生产测试 stream 写入 Fetch Command，验证多个 pod 常驻消费并发布 `crawl_attempt` 后 `XACK`。

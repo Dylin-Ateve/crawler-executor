@@ -3,7 +3,7 @@
 **更新日期**：2026-04-30
 **对应 commit**：待下次合并后回填
 **对照终态**：`.specify/memory/architecture.md`
-**当前阶段**：P0 核心链路已验证；P1 `crawl_attempt` producer 已通过目标节点 T055 验证。M2 `specs/003-p2-readonly-scheduler-queue/` 已完成目标节点验证。T015c 优雅停机实现已满足 PEL 不清空与可恢复底线，但目标节点验证显示严格 "SIGTERM 后立即停止读 / claim 并在 drain 时限前退出" 未满足；按低频手动滚动、任务幂等、允许少量重复抓取的运行假设暂时接受为过渡策略。M3 `specs/004-p3-k8s-daemonset-hostnetwork/` 已启动规格草案。
+**当前阶段**：P0 核心链路已验证；P1 `crawl_attempt` producer 已通过目标节点 T055 验证。M2 `specs/003-p2-readonly-scheduler-queue/` 已完成目标节点验证。T015c 优雅停机实现已满足 PEL 不清空与可恢复底线，但目标节点验证显示严格 "SIGTERM 后立即停止读 / claim 并在 drain 时限前退出" 未满足；按低频手动滚动、任务幂等、允许少量重复抓取的运行假设暂时接受为过渡策略。M3 `specs/004-p3-k8s-daemonset-hostnetwork/` 已启动并推进到目标集群资源准备阶段，现因生产上线前发现功能性遗漏而暂停，等待后续新 spec 补齐功能缺口后恢复。
 
 ## 1. 当前架构快照
 
@@ -26,7 +26,7 @@ Scrapy worker
 当前仍是研发验证形态，不是完整终态：
 
 - 已通过 Redis Streams consumer group 目标节点验证；真实第六类生产队列接入仍待上游联调。
-- 尚未运行 K8s DaemonSet / hostNetwork 生产部署。
+- 004 已完成部分 OKE 现场准备：`scrapy-node-pool`、`scrapy-egress=true`、`enp0s5`、每 node 约 65 个 IPv4、`crawler-executor` namespace、Redis/Kafka Secret key 存在；尚未运行 K8s DaemonSet / hostNetwork 生产部署。
 - 尚未交付第五类消费端事实投影。
 - 尚未完成控制平面策略运行时下发。
 
@@ -44,7 +44,7 @@ Scrapy worker
 | 第五类事实投影 | 不属于本系统 | PostgreSQL pages/crawl_logs 等由第五类消费端承接，本仓库只保留 producer 契约。 |
 | ClickHouse Host 画像 | 不属于本系统 | 已明确归第五类，当前不在本仓库实现。 |
 | 下游 Python 解析服务 | 不属于本系统 | 第三类订阅事件自取 storage_key，本系统不派发 parse-tasks。 |
-| K8s 部署 | 规划中 | 004 已启动 DaemonSet + hostNetwork 生产部署基础草案；manifest、探针实现、镜像构建和配置注入尚未实现。 |
+| K8s 部署 | 已启动但暂停 | 004 已形成 DaemonSet + hostNetwork 模板、探针、配置分层和目标集群审计脚本；目标 OKE 现场已记录：`scrapy-node-pool`、`subnetCollection`、`scrapy-egress=true`、`enp0s5`、每 node 约 65 个 IPv4、Redis/Kafka Secret key 存在。因生产上线前发现功能性遗漏，004 暂停；ConfigMap、DaemonSet 和集群消费验证未执行。 |
 | Terraform / cloud-init 自动化 | 暂不规划 | 当前不进入近期规划，后续规模化时再评估。 |
 | Prometheus 指标 | 部分完成 | 已有请求、耗时、IP、黑名单、存储、Kafka producer 指标；集群级队列、lag、资源面板未完成。 |
 | Grafana / 告警 | 未完成 | 尚未配置看板和告警规则。 |

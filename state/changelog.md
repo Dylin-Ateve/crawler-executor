@@ -6,12 +6,14 @@
 
 ## 2026-04-30
 
-### P3 / 004：K8s DaemonSet + hostNetwork 生产部署基础草案启动
+### P3 / 004：K8s DaemonSet + hostNetwork 生产部署基础暂停并记录现场
 
 - **关联 spec**：`specs/004-p3-k8s-daemonset-hostnetwork/`
-- **新增能力**：建立 M3 规格草案，明确专用 crawler node pool、DaemonSet、`hostNetwork: true`、每 node 单 pod、Redis Streams 常驻消费、node / pod 精准调试和 Secret / ConfigMap 分层。
+- **新增能力**：建立 M3 规格草案与部署基础模板，明确专用 crawler node pool、DaemonSet、`hostNetwork: true`、每 node 单 pod、Redis Streams 常驻消费、node / pod 精准调试、Secret / ConfigMap 分层、health probe、pause flag 和目标集群审计脚本。
 - **关键决策**：关停语义选择 B（低频手动滚动、任务幂等、允许少量重复抓取、未完成 in-flight 留 PEL 后续 reclaim）；liveness 只检查进程 / reactor / metrics endpoint 基本存活，外部依赖短暂故障进入指标和告警；debug stream 的 `crawl_attempt` 仍进入正式 topic，但必须携带 `tier=debug` 供第五类过滤或标记。
-- **当前状态**：草案；尚未进入 plan / manifest 实现。
+- **目标集群现场**：已确认 OKE node pool `scrapy-node-pool`、subnet `subnetCollection`、2 个 node 均带 `scrapy-egress=true`；host interface 为 `enp0s5`，每 node 约 65 个 IPv4；Redis endpoint `aaajqtckmia7tfijfk75vfiz4rw4goapkg3geaw2tmaaog4ogcwh6ta-p.redis.us-phoenix-1.oci.oraclecloud.com:7379` TCP 连通；namespace `crawler-executor` 已创建；`crawler-executor-redis` 和 `crawler-executor-kafka` Secret key 均存在。
+- **暂停原因**：生产部署前发现功能性遗漏。团队决定暂停 004，不继续 apply ConfigMap / DaemonSet，也不进入生产流量验证；后续先制定新 spec 补齐功能缺口。
+- **当前状态**：已暂停。ConfigMap、DaemonSet、Redis PING、Kafka publish smoke、Object Storage 权限、常驻消费、debug、pause 和 PEL reclaim 目标集群验证均待恢复后执行。
 
 ### P2 / 003：优雅停机与 PEL 移交语义落地（T015c 收尾）
 

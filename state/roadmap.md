@@ -32,8 +32,10 @@
 ### M3：生产部署基础
 
 - **目标**：K8s DaemonSet + hostNetwork、健康探针、指标端口、配置注入和节点隔离。
-- **状态**：spec 草案启动。
+- **状态**：已暂停。004 已完成部署方案、模板和部分目标集群资源准备；因生产上线前发现功能性遗漏，暂不继续部署。
 - **对应 spec**：`specs/004-p3-k8s-daemonset-hostnetwork/`
+- **当前现场**：`scrapy-node-pool`、`subnetCollection`、`scrapy-egress=true`、`enp0s5`、两个 node、每 node 约 65 个 IPv4；`crawler-executor` namespace 已创建；Redis/Kafka Secret key 已存在；Redis TCP 连通与 Kafka 连通性暂认定，协议级 / 发布级验证待补。
+- **恢复条件**：后续新 spec 明确并补齐生产功能缺口；Redis PING、Kafka publish smoke、Object Storage 权限和真实 ConfigMap 审核通过后，再恢复 DaemonSet dry-run 与目标集群验证。
 - **验收信号**：节点扩缩容时 worker 自动跟随；liveness 仅反映进程 / reactor / metrics endpoint 基本存活；Kafka / Redis / OCI 依赖异常通过 Prometheus 指标和告警反映，不因短暂抖动触发探针失败。
 
 ### M4：控制平面策略运行时覆盖
@@ -64,7 +66,7 @@
 
 1. Redis 只读边界审计补强：在现有 key diff + `XLEN` 前后对比之外，增加允许状态变化清单和更宽 audit pattern。
 2. T015c 严格优雅停机收口：更早设置 shutdown flag，确保 SIGTERM 后立即停止 `XREADGROUP` / `XAUTOCLAIM`，并明确 drain deadline 是否强制退出。
-3. K8s DaemonSet + hostNetwork 部署。
+3. K8s DaemonSet + hostNetwork 部署。004 已暂停，等待功能缺口补齐后恢复。
 4. Grafana 基础看板、告警和运维 SOP。
 5. 24 小时稳定性压测、30-50 pages/sec 单节点目标验证。
 6. 控制平面策略运行时覆盖。
@@ -84,7 +86,7 @@
 
 ## 5. 下一阶段建议
 
-004 已启动 M3 spec 草案。M3 第一版按 T015c 过渡运行假设设计：低频手动滚动、任务幂等、允许少量重复抓取、PEL 可恢复。若后续滚动重启频率提高或重复抓取不可接受，应先修正严格优雅停机入口与 drain deadline，再提升滚动更新自动化程度。
+004 已暂停，不继续推进生产部署。下一步应先围绕用户发现的功能性遗漏新建 spec，明确缺口、验收标准和与现有 P2 / M3 契约的关系。M3 第一版仍按 T015c 过渡运行假设设计：低频手动滚动、任务幂等、允许少量重复抓取、PEL 可恢复。若后续滚动重启频率提高或重复抓取不可接受，应先修正严格优雅停机入口与 drain deadline，再恢复 004 部署推进。
 
 D-DEBT-5（只读边界 audit pattern 加宽）按现状层债务跟进，不阻塞 M3 启动。
 

@@ -2,7 +2,7 @@
 
 **功能分支**：`004-p3-k8s-daemonset-hostnetwork`  
 **创建日期**：2026-04-30  
-**状态**：草案  
+**状态**：已暂停
 **输入来源**：`.specify/memory/product.md`、`.specify/memory/architecture.md`、`state/current.md`、`state/roadmap.md`、`state/decisions/0003-redis-write-side-belongs-to-scheduler.md`、`state/decisions/0004-use-redis-streams-consumer-group-for-fetch-queue.md`、`state/decisions/0006-ack-fetch-command-after-crawl-attempt-published.md`、`state/decisions/0008-kafka-publish-failure-not-in-max-deliveries-terminal-semantics.md`、`state/decisions/0009-graceful-shutdown-and-pel-handover.md`、`state/decisions/0010-system-group-class-2-positioning.md`、`state/decisions/0011-k8s-rollout-uses-pel-recovery-shutdown-posture.md`
 
 ## 定位与边界检查
@@ -19,6 +19,47 @@ P2 已验证 Redis Streams consumer group、多 worker 正常 ack 路径、Kafka
 M3 的目标是把 crawler-executor 推进到 K8s 集群中的节点级常驻部署形态：每台具备多出口网卡的 crawler node 运行一个 crawler pod，pod 通过 `hostNetwork` 访问宿主机辅助 IPv4 池，持续只读消费第六类 Redis Streams 抓取指令，并保留对单个 node / pod 的精确调试能力。
 
 本 spec 不追求一次性完成大规模生产调优。M3 只收口部署基础、运行参数注入、健康探针、指标暴露、节点隔离、调试路由与滚动更新约束。
+
+## 暂停记录
+
+**暂停日期**：2026-04-30
+
+**暂停原因**：目标集群资源准备过程中发现生产上线前仍存在功能性遗漏。继续推进 004 会把部署问题、环境问题和功能缺口混在同一条验证链路里，不利于定位和回滚。因此 004 暂停在“部署基础准备 / 目标集群现场记录”阶段，等待后续新 spec 明确并补齐功能缺口后再恢复。
+
+**已完成现场**：
+
+- OKE node pool 已创建并用于第一轮实测：`scrapy-node-pool`。
+- node pool subnet：`subnetCollection`。
+- crawler node 数量：2。
+- crawler 调度 label：`scrapy-egress=true`，两个 node 均已确认存在。
+- taint：暂未配置，符合 004 第一轮实测策略。
+- host interface：`enp0s5`。
+- 每个 node 的 `enp0s5` IPv4 数量：约 65，后续生产 profile 按 `M3_IP_POOL_EXPECTED_RANGE=60-70` 验证。
+- Redis endpoint TCP 连通已确认：`aaajqtckmia7tfijfk75vfiz4rw4goapkg3geaw2tmaaog4ogcwh6ta-p.redis.us-phoenix-1.oci.oraclecloud.com:7379`；Redis 协议级 `PING` 待恢复后补做。
+- K8s namespace：`crawler-executor`。
+- K8s Secret 已创建且 key 存在：
+  - `crawler-executor-redis`：`fetch_queue_redis_url`、`redis_url`。
+  - `crawler-executor-kafka`：`username`、`password`。
+- Kafka 连通性当前由团队暂认定可用；生产发布验证待恢复后补做。
+- 已新增生产 / staging 环境 profile：
+  - `deploy/environments/production.env`：记录当前 OCI / OKE 生产候选参数。
+  - `deploy/environments/staging.env`：保留早期 staging / `ens3` 默认。
+
+**未继续推进**：
+
+- 未将真实 ConfigMap apply 到目标集群。
+- 未部署 DaemonSet。
+- 未执行 `run-m3-k8s-daemonset-audit.sh`。
+- 未验证 pod 内 hostNetwork IP 池发现。
+- 未验证多 pod 常驻消费、`crawl_attempt` 发布后 `XACK`、debug stream、pause flag、手动删除 pod 后 PEL reclaim。
+
+**恢复条件**：
+
+1. 新 spec 明确并补齐生产上线前发现的功能性缺口。
+2. 确认补齐内容不会改变 004 的核心部署假设；如改变，需要先更新 ADR / 004 规格。
+3. Redis 协议级 `PING`、Kafka 发布 smoke、Object Storage 写入权限在目标集群或等价环境中通过。
+4. ConfigMap 真实非敏感参数完成审核，Secret 仍不得进入仓库或 ConfigMap。
+5. 恢复后从 `quickstart.md` 的目标集群验证步骤继续，而不是直接上生产流量。
 
 ## 已确认决策
 

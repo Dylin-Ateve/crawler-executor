@@ -1,6 +1,34 @@
 # 快速开始：P3 K8s DaemonSet + hostNetwork 生产部署基础
 
-本文档定义 004 的目标集群验证流程。当前为草案，待 `deploy/k8s/` 模板和 M3 验证脚本实现后填写实测结果。
+本文档定义 004 的目标集群验证流程。当前 004 已暂停；本文只保留已完成现场和恢复后的验证步骤，不作为立即上生产的操作指引。
+
+## 暂停状态
+
+**暂停日期**：2026-04-30
+
+**暂停原因**：生产部署前发现功能性遗漏，需先通过后续新 spec 明确并补齐。004 暂停在资源准备和现场记录阶段。
+
+**已记录现场**：
+
+| 项目 | 当前值 / 状态 |
+|---|---|
+| node pool | `scrapy-node-pool` |
+| subnet | `subnetCollection` |
+| node count | `2` |
+| node label | `scrapy-egress=true` |
+| taint | 暂不配置 |
+| host interface | `enp0s5` |
+| per-node IPv4 count | 约 `65` |
+| production IP range | `M3_IP_POOL_EXPECTED_RANGE=60-70` |
+| namespace | `crawler-executor` |
+| Redis TCP | `aaajqtckmia7tfijfk75vfiz4rw4goapkg3geaw2tmaaog4ogcwh6ta-p.redis.us-phoenix-1.oci.oraclecloud.com:7379` 已连通 |
+| Redis PING | 待补 |
+| Redis Secret | `crawler-executor-redis` key 已确认 |
+| Kafka Secret | `crawler-executor-kafka` key 已确认 |
+| ConfigMap | 未 apply |
+| DaemonSet | 未部署 |
+
+**恢复入口**：后续新 spec 补齐功能缺口后，从“Step 2：DaemonSet dry-run”前的 ConfigMap 审核继续，随后再执行 DaemonSet 审计、IP 池、消费、debug、pause 与 PEL 验证。
 
 ## 前置条件
 
