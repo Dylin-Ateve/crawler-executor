@@ -67,7 +67,7 @@ FETCH_QUEUE_CLAIM_MIN_IDLE_MS >= terminationGracePeriodSeconds * 1000 + safety_m
 
 ## Scrapy 抓取与并发参数
 
-004 当前已暂停。下表保留 M3 部署基础第一版参数，但恢复 004 前必须按 ADR-0012 重新审核并发与 politeness 参数：生产方向不再把 `CONCURRENT_REQUESTS_PER_DOMAIN` / `DOWNLOAD_DELAY` 当作主要防封模型，而应由后续新 spec 定义 sticky-pool、per-(host, ip) pacer、IP cooldown、host slowdown 和本地有界延迟。
+004 当前已暂停。005 已补齐 M3a 自适应 politeness 与出口并发控制参数；恢复 004 前必须以 `STICKY_POOL`、per-(host, ip) pacer、IP cooldown、host slowdown 和本地有界延迟作为生产默认，`CONCURRENT_REQUESTS_PER_DOMAIN` / `DOWNLOAD_DELAY` 仅保留为 Scrapy fallback 约束。
 
 | key | 映射环境变量 | 建议值 | 说明 |
 |---|---|---|---|
@@ -86,11 +86,43 @@ FETCH_QUEUE_CLAIM_MIN_IDLE_MS >= terminationGracePeriodSeconds * 1000 + safety_m
 | `crawl_interface` | `CRAWL_INTERFACE` | `enp0s5` | M3 生产第一版固定扫描 `enp0s5`；`all` / `*` 仅作为显式全接口诊断能力。 |
 | `excluded_local_ips` | `EXCLUDED_LOCAL_IPS` | 按节点环境填写 | 逗号分隔，排除保留 / 禁用 / 管理 IP。 |
 | `local_ip_pool` | `LOCAL_IP_POOL` | 空 | 生产默认不显式配置，优先启动时扫描；仅用于 debug 或回退。 |
-| `ip_selection_strategy` | `IP_SELECTION_STRATEGY` | `STICKY_BY_HOST` | 仅作为 P0 / staging / 历史验证默认；生产恢复 004 前需由 ADR-0012 新 spec 替换为 host-aware sticky-pool。 |
+| `ip_selection_strategy` | `IP_SELECTION_STRATEGY` | `STICKY_POOL` | production / staging 默认使用 005 sticky-pool；`STICKY_BY_HOST` 仅允许 P0 / 回退验证显式启用。 |
 | `ip_failure_threshold` | `IP_FAILURE_THRESHOLD` | `5` | 历史 IP health 参数；后续需区分 `(host, ip)`、`ip`、`host` 维度。 |
 | `ip_failure_window_seconds` | `IP_FAILURE_WINDOW_SECONDS` | `300` | 历史 IP health 参数。 |
 | `ip_cooldown_seconds` | `IP_COOLDOWN_SECONDS` | `1800` | 历史 IP cooldown 参数；生产需补充软封禁反馈和恢复试探。 |
 | `redis_key_prefix` | `REDIS_KEY_PREFIX` | `crawler` | P0 IP health key 前缀，不包含 Redis 连接信息。 |
+
+## M3a 自适应出口与 politeness 参数
+
+| key | 映射环境变量 | 建议值 | 说明 |
+|---|---|---|---|
+| `egress_selection_strategy` | `EGRESS_SELECTION_STRATEGY` | `STICKY_POOL` | 005 生产策略入口。 |
+| `sticky_pool_size` | `STICKY_POOL_SIZE` | `4` | 单 host 稳定候选出口身份数量。 |
+| `egress_identity_source` | `EGRESS_IDENTITY_SOURCE` | `auto` | 优先 public IP 映射，缺失时按配置 fallback。 |
+| `egress_identity_map_file` | `EGRESS_IDENTITY_MAP_FILE` | 空 | private-to-public 映射文件路径；未配置时需标注 bind IP 身份。 |
+| `egress_identity_hash_salt` | `EGRESS_IDENTITY_HASH_SALT` | 环境级 salt | 指标与日志中的出口身份 hash salt。 |
+| `allow_bind_ip_as_egress_identity` | `ALLOW_BIND_IP_AS_EGRESS_IDENTITY` | `true` | 第一版允许 public 映射缺失时用 bind IP 近似。 |
+| `host_ip_min_delay_ms` | `HOST_IP_MIN_DELAY_MS` | `2000` | 同一 `(host, egress_identity)` 最小启动间隔。 |
+| `host_ip_jitter_ms` | `HOST_IP_JITTER_MS` | `500` | pacer jitter 上限。 |
+| `host_ip_backoff_base_ms` | `HOST_IP_BACKOFF_BASE_MS` | `5000` | soft-ban backoff 基础时长。 |
+| `host_ip_backoff_max_ms` | `HOST_IP_BACKOFF_MAX_MS` | `300000` | soft-ban backoff 上限。 |
+| `host_ip_backoff_multiplier` | `HOST_IP_BACKOFF_MULTIPLIER` | `2.0` | 指数 backoff 倍率。 |
+| `host_slowdown_seconds` | `HOST_SLOWDOWN_SECONDS` | `600` | host 级 slowdown TTL。 |
+| `host_slowdown_factor` | `HOST_SLOWDOWN_FACTOR` | `3.0` | host 级 slowdown 放大系数。 |
+| `local_delayed_buffer_capacity` | `LOCAL_DELAYED_BUFFER_CAPACITY` | `100` | 本地 delayed buffer 硬上限。 |
+| `max_local_delay_seconds` | `MAX_LOCAL_DELAY_SECONDS` | `300` | delayed 消息最长本地等待告警阈值。 |
+| `local_delayed_buffer_poll_ms` | `LOCAL_DELAYED_BUFFER_POLL_MS` | `500` | buffer 满或待 due 时的轮询间隔。 |
+| `stop_reading_when_delayed_buffer_full` | `STOP_READING_WHEN_DELAYED_BUFFER_FULL` | `true` | buffer 满时停止 `XREADGROUP`。 |
+| `soft_ban_window_seconds` | `SOFT_BAN_WINDOW_SECONDS` | `300` | soft-ban 聚合窗口。 |
+| `host_ip_soft_ban_threshold` | `HOST_IP_SOFT_BAN_THRESHOLD` | `2` | `(host, ip)` backoff 触发阈值。 |
+| `ip_cross_host_challenge_threshold` | `IP_CROSS_HOST_CHALLENGE_THRESHOLD` | `3` | IP cooldown 跨 host challenge 阈值。 |
+| `host_cross_ip_challenge_threshold` | `HOST_CROSS_IP_CHALLENGE_THRESHOLD` | `3` | host slowdown 跨 IP challenge 阈值。 |
+| `execution_state_redis_url` | `EXECUTION_STATE_REDIS_URL` | 空 | 为空时复用 `REDIS_URL`。 |
+| `execution_state_redis_prefix` | `EXECUTION_STATE_REDIS_PREFIX` | `crawler:exec:safety` | 005 允许的 Redis TTL 执行态前缀。 |
+| `execution_state_max_ttl_seconds` | `EXECUTION_STATE_MAX_TTL_SECONDS` | `86400` | 执行态 TTL 上限。 |
+| `execution_state_write_enabled` | `EXECUTION_STATE_WRITE_ENABLED` | `true` | 生产启用短窗口执行态写入。 |
+| `execution_state_fail_open` | `EXECUTION_STATE_FAIL_OPEN` | `true` | 执行态 Redis 失败时不伪造抓取事实。 |
+| `host_asn_soft_limit_enabled` | `HOST_ASN_SOFT_LIMIT_ENABLED` | `false` | ASN / CIDR 第一版默认仅观测，不强制控制。 |
 
 ## P1 持久化与 Kafka 非敏感参数
 
@@ -174,10 +206,35 @@ data:
   crawl_interface: enp0s5
   excluded_local_ips: ""
   local_ip_pool: ""
-  ip_selection_strategy: STICKY_BY_HOST
+  ip_selection_strategy: STICKY_POOL
   ip_failure_threshold: "5"
   ip_failure_window_seconds: "300"
   ip_cooldown_seconds: "1800"
+  egress_selection_strategy: STICKY_POOL
+  sticky_pool_size: "4"
+  egress_identity_source: auto
+  egress_identity_map_file: ""
+  egress_identity_hash_salt: production-egress-v1
+  allow_bind_ip_as_egress_identity: "true"
+  host_ip_min_delay_ms: "2000"
+  host_ip_jitter_ms: "500"
+  host_ip_backoff_base_ms: "5000"
+  host_ip_backoff_max_ms: "300000"
+  host_ip_backoff_multiplier: "2.0"
+  host_slowdown_seconds: "600"
+  host_slowdown_factor: "3.0"
+  local_delayed_buffer_capacity: "100"
+  max_local_delay_seconds: "300"
+  local_delayed_buffer_poll_ms: "500"
+  stop_reading_when_delayed_buffer_full: "true"
+  soft_ban_window_seconds: "300"
+  host_ip_soft_ban_threshold: "2"
+  ip_cross_host_challenge_threshold: "3"
+  host_cross_ip_challenge_threshold: "3"
+  execution_state_redis_prefix: crawler:exec:safety
+  execution_state_max_ttl_seconds: "86400"
+  execution_state_write_enabled: "true"
+  execution_state_fail_open: "true"
   redis_key_prefix: crawler
   enable_p1_persistence: "true"
   object_storage_provider: oci

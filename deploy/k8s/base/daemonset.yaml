@@ -25,6 +25,8 @@ spec:
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
       terminationGracePeriodSeconds: 30
+      imagePullSecrets:
+        - name: regcred
       nodeSelector:
         scrapy-egress: "true"
       tolerations:
@@ -232,6 +234,186 @@ spec:
                 configMapKeyRef:
                   name: crawler-executor-config
                   key: ip_cooldown_seconds
+            - name: EGRESS_SELECTION_STRATEGY
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: egress_selection_strategy
+            - name: STICKY_POOL_SIZE
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: sticky_pool_size
+            - name: EGRESS_IDENTITY_SOURCE
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: egress_identity_source
+            - name: EGRESS_IDENTITY_MAP_FILE
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: egress_identity_map_file
+            - name: EGRESS_IDENTITY_HASH_SALT
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: egress_identity_hash_salt
+            - name: ALLOW_BIND_IP_AS_EGRESS_IDENTITY
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: allow_bind_ip_as_egress_identity
+            - name: HOST_IP_MIN_DELAY_MS
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: host_ip_min_delay_ms
+            - name: HOST_IP_JITTER_MS
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: host_ip_jitter_ms
+            - name: HOST_IP_BACKOFF_BASE_MS
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: host_ip_backoff_base_ms
+            - name: HOST_IP_BACKOFF_MAX_MS
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: host_ip_backoff_max_ms
+            - name: HOST_IP_BACKOFF_MULTIPLIER
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: host_ip_backoff_multiplier
+            - name: HOST_SLOWDOWN_SECONDS
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: host_slowdown_seconds
+            - name: HOST_SLOWDOWN_FACTOR
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: host_slowdown_factor
+            - name: LOCAL_DELAYED_BUFFER_CAPACITY
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: local_delayed_buffer_capacity
+            - name: MAX_LOCAL_DELAY_SECONDS
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: max_local_delay_seconds
+            - name: LOCAL_DELAYED_BUFFER_POLL_MS
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: local_delayed_buffer_poll_ms
+            - name: STOP_READING_WHEN_DELAYED_BUFFER_FULL
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: stop_reading_when_delayed_buffer_full
+            - name: SOFT_BAN_WINDOW_SECONDS
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: soft_ban_window_seconds
+            - name: HOST_IP_SOFT_BAN_THRESHOLD
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: host_ip_soft_ban_threshold
+            - name: IP_CROSS_HOST_CHALLENGE_THRESHOLD
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: ip_cross_host_challenge_threshold
+            - name: HOST_CROSS_IP_CHALLENGE_THRESHOLD
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: host_cross_ip_challenge_threshold
+            - name: HTTP_429_WEIGHT
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: http_429_weight
+            - name: CAPTCHA_CHALLENGE_WEIGHT
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: captcha_challenge_weight
+            - name: ANTI_BOT_200_WEIGHT
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: anti_bot_200_weight
+            - name: HTTP_5XX_WEIGHT
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: http_5xx_weight
+            - name: TIMEOUT_WEIGHT
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: timeout_weight
+            - name: CHALLENGE_BODY_PATTERNS
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: challenge_body_patterns
+            - name: ANTI_BOT_200_PATTERNS
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: anti_bot_200_patterns
+            - name: EXECUTION_STATE_REDIS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: execution_state_redis_url
+            - name: EXECUTION_STATE_REDIS_PREFIX
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: execution_state_redis_prefix
+            - name: EXECUTION_STATE_MAX_TTL_SECONDS
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: execution_state_max_ttl_seconds
+            - name: EXECUTION_STATE_WRITE_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: execution_state_write_enabled
+            - name: EXECUTION_STATE_FAIL_OPEN
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: execution_state_fail_open
+            - name: ASN_OBSERVABILITY_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: asn_observability_enabled
+            - name: ASN_DATABASE_PATH
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: asn_database_path
+            - name: HOST_ASN_SOFT_LIMIT_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: host_asn_soft_limit_enabled
             - name: REDIS_KEY_PREFIX
               valueFrom:
                 configMapKeyRef:

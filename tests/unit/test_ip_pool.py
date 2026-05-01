@@ -61,3 +61,12 @@ def test_local_ip_pool_supports_sixty_ipv4_addresses_without_fixed_cap():
 
     assert len(pool.ip_pool) == 60
     assert pool.select_for_host("example.com") in pool.ip_pool
+
+
+def test_local_ip_pool_accepts_sticky_pool_as_legacy_fallback():
+    pool = LocalIpPool(["10.0.0.2", "10.0.0.3"], strategy="STICKY_POOL")
+
+    first = pool.select_for_host("example.com")
+
+    assert first in pool.ip_pool
+    assert pool.select_for_host("example.com") == first

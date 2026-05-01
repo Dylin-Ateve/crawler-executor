@@ -157,6 +157,30 @@ Host 画像、业务级闭环指标和事实层看板归第五类。
 - 外部依赖连接信息通过环境变量或 secret 注入，敏感凭据禁止入库。
 - 事件总线短暂不可用时应具备节点本地持久化缓冲能力。
 
+### 6.9 环境等价性
+
+production 与 staging 是物理隔离的两套目标环境，但 staging 的定位是 production 功能验证的等价镜像环境。
+
+终态约束：
+
+- staging 必须复刻 production 的功能策略、部署形态、运行参数语义和操作流程。
+- staging 与 production 只允许在资源定位、资源规模和物理拓扑上不同，例如 kube context、对象存储 / Kafka / Redis 端点、节点数量、机器规格、网卡名、本地出口 IP 数量和环境级 hash salt / Redis prefix。
+- namespace、workload 名称、node label key、taint / toleration 策略、ConfigMap / Secret key 契约和验证步骤应尽量保持一致。若必须不同，必须在对应增量 spec 或 ADR 中说明原因、验证影响和回收条件。
+- 所有准备在 production 验证的功能项和步骤，必须先能在 staging 以同一流程复刻执行；不能把 staging 降级为历史 fallback 或 P0 策略验证环境。
+- `STICKY_BY_HOST` 等历史策略只能作为显式回退验证口径，不得作为 staging 默认。
+
+### 6.10 镜像与发布
+
+本系统进入 K8s / DaemonSet 验证前，必须具备可重复构建、可追踪版本、可回滚的容器镜像发布流程。
+
+终态约束：
+
+- 仓库必须提供容器镜像构建入口，镜像不得内嵌 Redis / Kafka / OCI 等真实凭据。
+- 镜像 tag 必须能追溯到代码版本，推荐使用 git commit SHA 或发布版本号；不得长期依赖 `latest` 作为部署输入。
+- staging 和 production 使用同一镜像构建产物或同一构建流程产出的等价镜像；环境差异通过 ConfigMap / Secret / env 注入，不通过改代码或改镜像表达。
+- K8s manifest 中的 `image` 必须在部署前显式替换为目标 registry / tag。
+- 镜像构建、推送、ConfigMap 渲染、DaemonSet image 更新和回滚命令必须形成可审计 SOP，并先在 staging 验证。
+
 ## 7. `crawl_attempt` 事件模型纲领
 
 `crawl_attempt` 是本系统对外的唯一抓取事实事件。

@@ -1,17 +1,35 @@
 # 交付变更记录：crawler-executor
 
-**更新日期**：2026-04-30
+**更新日期**：2026-05-01
 **文档层级**：现状层 / 交付记录
 **排序规则**：倒序记录已合并或已完成验证的 spec 与架构决策。
 
+## 2026-05-01
+
+### M3a / 005：自适应 Politeness 与出口并发控制本地收口
+
+- **关联 spec**：`specs/005-m3a-adaptive-politeness-egress-concurrency/`
+- **新增能力**：实现 `egress_identity`、host-aware sticky-pool、per-(host, egress_identity) pacer、本地 delayed buffer、response / exception feedback signal、Redis TTL 执行安全状态、soft-ban feedback controller 和 005 指标。
+- **生产路径**：`FetchQueueSpider` 的 `STICKY_POOL` 路径会写入 `egress_identity` / `egress_identity_hash` / `egress_identity_type` / `download_slot`，并读取 Redis 中的 `(host, ip)` backoff、IP cooldown 和 host slowdown 影响后续选择。
+- **验证脚本**：新增并本地通过 `run-m3a-config-audit.sh`、`run-m3a-sticky-pool-validation.sh`、`run-m3a-pacer-validation.sh`、`run-m3a-soft-ban-feedback-validation.sh`、`run-m3a-delayed-buffer-validation.sh`、`run-m3a-redis-boundary-validation.sh`。
+- **测试结果**：本地执行 005 相关单元 / 集成测试通过，59 passed。
+- **004 恢复准备**：production profile、K8s base ConfigMap / DaemonSet env 和 004 ConfigMap 契约已切换到 005 生产参数；下一步仍需目标节点 smoke 后恢复 004 dry-run 与集群验证。
+
 ## 2026-04-30
+
+### M3a / 005：自适应 Politeness 与出口并发控制规格启动
+
+- **关联 spec**：`specs/005-m3a-adaptive-politeness-egress-concurrency/`
+- **新增内容**：创建 005 规格、实施计划、研究记录、数据模型、运行参数契约、Redis 执行态契约、指标契约、quickstart 和任务清单。
+- **目标范围**：补齐 host-aware sticky-pool、per-(host, ip) downloader slot、pacer、IP cooldown、host slowdown、soft-ban feedback、本地 delayed buffer 和 Redis 写入边界。
+- **状态**：草案已创建，等待进入实现；004 继续暂停，待 005 验证通过后恢复 K8s 部署验证。
 
 ### ADR-0012：自适应 Politeness 与出口并发控制边界
 
 - **关联 ADR**：`state/decisions/0012-adaptive-politeness-and-egress-concurrency.md`
-- **新增决策**：生产方向从静态 per-host rate cap / `STICKY_BY_HOST = host -> 1 IP` 调整为自适应防封闭环；P0 / staging 可保留历史策略，生产需采用 host-aware sticky-pool。
+- **新增决策**：production / staging 方向从静态 per-host rate cap / `STICKY_BY_HOST = host -> 1 IP` 调整为自适应防封闭环；P0 / 显式回退验证可保留历史策略，production / staging 默认采用 host-aware sticky-pool。
 - **边界澄清**：crawler-executor 仍不得写 URL 队列、优先级、去重或长期 Host / IP / ASN 画像事实；允许写入 TTL、命名空间隔离的短窗口执行安全状态，如 `(host, ip)` backoff、IP cooldown、host slowdown 和可选 `(host, asn/cidr)` soft limit。
-- **后续影响**：004 继续暂停；下一步先新建自适应 Politeness 与出口并发控制 spec，补齐 sticky-pool、per-(host, ip) downloader slot、软封禁反馈、本地有界延迟和相关指标后，再恢复 K8s 部署验证。
+- **后续影响**：004 继续暂停；005 已创建用于补齐 sticky-pool、per-(host, ip) downloader slot、软封禁反馈、本地有界延迟和相关指标，005 验证通过后再恢复 K8s 部署验证。
 
 ### P3 / 004：K8s DaemonSet + hostNetwork 生产部署基础暂停并记录现场
 

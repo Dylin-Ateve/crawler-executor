@@ -2,18 +2,101 @@ from __future__ import annotations
 
 import asyncio
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
+from urllib.parse import urlsplit
 
 import scrapy
 from scrapy import signals as scrapy_signals
 
+from crawler.egress_identity import (
+    EgressIdentity,
+    load_egress_identity_map,
+    resolve_egress_identities,
+    stable_hash,
+)
+from crawler.egress_policy import EgressPolicyError, build_sticky_pool_assignment, select_from_sticky_pool
+from crawler.fetch_safety_state import EgressCooldownState, ExecutionStateKeyBuilder, FetchSafetyStateStore
 from crawler.health import mark_worker_initialized, record_consumer_heartbeat
+from crawler.ip_pool import discover_local_ips
 from crawler.metrics import metrics
+from crawler.politeness import (
+    HostIpPacerConfig,
+    HostIpPacerState,
+    mark_request_started,
+    pacer_decision,
+)
 from crawler.queues import FetchCommand, RedisStreamsFetchConsumer
 
 
 RETRYABLE_HTTP_STATUS_CODES = {408, 429, 500, 502, 503, 504, 522, 524}
+
+
+@dataclass(frozen=True)
+class LocalDelayedFetchCommand:
+    command: FetchCommand
+    message_id: str
+    eligible_at_ms: int
+    read_at_ms: int
+    delay_reason: str
+    selected_identity_hash: str
+    warning_logged: bool = False
+
+
+class LocalDelayedBuffer:
+    def __init__(self, capacity: int) -> None:
+        self.capacity = max(int(capacity), 0)
+        self._items: list[LocalDelayedFetchCommand] = []
+
+    def __len__(self) -> int:
+        return len(self._items)
+
+    @property
+    def is_full(self) -> bool:
+        return self.capacity > 0 and len(self._items) >= self.capacity
+
+    def add(self, item: LocalDelayedFetchCommand) -> bool:
+        if self.is_full:
+            return False
+        self._items.append(item)
+        self._items.sort(key=lambda delayed: delayed.eligible_at_ms)
+        return True
+
+    def pop_due(self, now_ms: int) -> list[LocalDelayedFetchCommand]:
+        due = [item for item in self._items if item.eligible_at_ms <= now_ms]
+        if not due:
+            return []
+        due_ids = {(item.message_id, item.selected_identity_hash) for item in due}
+        self._items = [
+            item
+            for item in self._items
+            if (item.message_id, item.selected_identity_hash) not in due_ids
+        ]
+        return due
+
+    def oldest_age_seconds(self, now_ms: int) -> float:
+        if not self._items:
+            return 0.0
+        oldest = min(item.read_at_ms for item in self._items)
+        return max((now_ms - oldest) / 1000.0, 0.0)
+
+    def mark_warning_logged(self, message_id: str, identity_hash: str) -> None:
+        self._items = [
+            LocalDelayedFetchCommand(
+                command=item.command,
+                message_id=item.message_id,
+                eligible_at_ms=item.eligible_at_ms,
+                read_at_ms=item.read_at_ms,
+                delay_reason=item.delay_reason,
+                selected_identity_hash=item.selected_identity_hash,
+                warning_logged=True,
+            )
+            if item.message_id == message_id and item.selected_identity_hash == identity_hash
+            else item
+            for item in self._items
+        ]
 
 
 class FetchQueueSpider(scrapy.Spider):
@@ -36,6 +119,18 @@ class FetchQueueSpider(scrapy.Spider):
         self.shutdown_drain_seconds = 25
         self._shutdown_started_at = None
         self._shutdown_summary_logged = False
+        self.egress_selection_strategy = "STICKY_BY_HOST"
+        self.egress_identities: tuple[EgressIdentity, ...] = ()
+        self.sticky_pool_size = 4
+        self.egress_hash_salt = ""
+        self.pacer_config = HostIpPacerConfig()
+        self.host_slowdown_factor = 1.0
+        self.delayed_buffer = LocalDelayedBuffer(capacity=0)
+        self.max_local_delay_seconds = 300
+        self.local_delayed_buffer_poll_seconds = 0.5
+        self.stop_reading_when_delayed_buffer_full = True
+        self._pacer_states: dict[tuple[str, str], HostIpPacerState] = {}
+        self.fetch_safety_store: Optional[FetchSafetyStateStore] = None
 
     @classmethod
     def from_crawler(cls, crawler, *args, **kwargs):
@@ -48,6 +143,7 @@ class FetchQueueSpider(scrapy.Spider):
         spider.shutdown_drain_seconds = crawler.settings.getint(
             "FETCH_QUEUE_SHUTDOWN_DRAIN_SECONDS", 25
         )
+        spider._configure_m3a(crawler.settings)
         # ADR-0009：不注册自定义 signal.signal() handler，通过 Scrapy 自身关停信号
         # 触发 consumer.request_shutdown()。spider_closed 与 engine_stopped 的连接
         # 形成 "进入停机标志 → 进入 drain → 退出总结" 的闭环。
@@ -119,13 +215,29 @@ class FetchQueueSpider(scrapy.Spider):
             self._pause_logged = False
             if max_messages and self.seen_messages >= max_messages:
                 return
+            async for delayed_request in self._drain_due_delayed_requests():
+                yield delayed_request
+                if max_messages and self.seen_messages >= max_messages:
+                    return
+            self._log_expired_delayed_commands()
+            if (
+                self.stop_reading_when_delayed_buffer_full
+                and self.delayed_buffer.is_full
+            ):
+                metrics.record_fetch_queue_event("xreadgroup_suppressed_delayed_buffer_full")
+                metrics.record_xreadgroup_suppressed("delayed_buffer_full")
+                self._record_delayed_buffer_metrics()
+                await asyncio.sleep(self.local_delayed_buffer_poll_seconds)
+                continue
             entries = self.consumer.read()
             if not entries:
                 if self.consumer.is_shutting_down:
                     return
                 metrics.record_fetch_queue_event("empty")
-                if max_messages:
+                if max_messages and not len(self.delayed_buffer):
                     return
+                if len(self.delayed_buffer):
+                    await asyncio.sleep(self.local_delayed_buffer_poll_seconds)
                 continue
             for entry in entries:
                 self._record_consumer_heartbeat()
@@ -145,9 +257,18 @@ class FetchQueueSpider(scrapy.Spider):
                     continue
                 self.seen_messages += 1
                 metrics.record_fetch_queue_event("read")
-                yield self._build_request(entry.command, entry.message_id)
+                request = self._build_or_delay_request(entry.command, entry.message_id)
+                if request is not None:
+                    yield request
 
-    def _build_request(self, command: FetchCommand, message_id: str) -> scrapy.Request:
+    def _build_request(
+        self,
+        command: FetchCommand,
+        message_id: str,
+        *,
+        egress_identity: Optional[EgressIdentity] = None,
+        host: Optional[str] = None,
+    ) -> scrapy.Request:
         attempted_at = datetime.now(timezone.utc)
         meta = command.to_request_meta()
         meta.update(
@@ -158,6 +279,18 @@ class FetchQueueSpider(scrapy.Spider):
                 "handle_httpstatus_all": True,
             }
         )
+        if egress_identity is not None and host:
+            meta.update(
+                {
+                    "egress_bind_ip": egress_identity.bind_ip,
+                    "egress_local_ip": egress_identity.bind_ip,
+                    "egress_identity": egress_identity.identity,
+                    "egress_identity_hash": egress_identity.identity_hash,
+                    "egress_identity_type": egress_identity.identity_type,
+                    "egress_host": host,
+                    "download_slot": f"{host}@{egress_identity.identity}",
+                }
+            )
         return scrapy.Request(
             url=command.url,
             callback=self.parse,
@@ -165,6 +298,280 @@ class FetchQueueSpider(scrapy.Spider):
             dont_filter=True,
             meta=meta,
         )
+
+    def _configure_m3a(self, settings) -> None:
+        self.egress_selection_strategy = (
+            settings.get("EGRESS_SELECTION_STRATEGY")
+            or settings.get("IP_SELECTION_STRATEGY", "STICKY_BY_HOST")
+        ).upper()
+        self.sticky_pool_size = settings.getint("STICKY_POOL_SIZE", 4)
+        self.egress_hash_salt = settings.get("EGRESS_IDENTITY_HASH_SALT", "") or ""
+        self.pacer_config = HostIpPacerConfig(
+            min_delay_ms=settings.getint("HOST_IP_MIN_DELAY_MS", 2000),
+            jitter_ms=settings.getint("HOST_IP_JITTER_MS", 500),
+            backoff_base_ms=settings.getint("HOST_IP_BACKOFF_BASE_MS", 5000),
+            backoff_max_ms=settings.getint("HOST_IP_BACKOFF_MAX_MS", 300000),
+            backoff_multiplier=float(settings.get("HOST_IP_BACKOFF_MULTIPLIER", 2.0)),
+        )
+        self.host_slowdown_factor = float(settings.get("HOST_SLOWDOWN_FACTOR", 1.0))
+        self.delayed_buffer = LocalDelayedBuffer(settings.getint("LOCAL_DELAYED_BUFFER_CAPACITY", 100))
+        self.max_local_delay_seconds = settings.getint("MAX_LOCAL_DELAY_SECONDS", 300)
+        self.local_delayed_buffer_poll_seconds = settings.getint("LOCAL_DELAYED_BUFFER_POLL_MS", 500) / 1000.0
+        self.stop_reading_when_delayed_buffer_full = settings.getbool(
+            "STOP_READING_WHEN_DELAYED_BUFFER_FULL", True
+        )
+
+        if self.egress_selection_strategy != "STICKY_POOL":
+            return
+
+        interface = settings.get("CRAWL_INTERFACE", "ens3")
+        excluded = settings.getlist("EXCLUDED_LOCAL_IPS", [])
+        bind_ips = settings.getlist("LOCAL_IP_POOL") or discover_local_ips(interface, excluded)
+        identity_map = load_egress_identity_map(settings.get("EGRESS_IDENTITY_MAP_FILE", "") or "")
+        self.egress_identities = resolve_egress_identities(
+            bind_ips,
+            identity_map=identity_map,
+            identity_source=settings.get("EGRESS_IDENTITY_SOURCE", "auto"),
+            allow_bind_ip=settings.getbool("ALLOW_BIND_IP_AS_EGRESS_IDENTITY", True),
+            hash_salt=self.egress_hash_salt,
+            interface=interface,
+        )
+        self.fetch_safety_store = self._build_fetch_safety_store(settings)
+
+    async def _drain_due_delayed_requests(self):
+        while True:
+            if self.consumer.is_shutting_down:
+                return
+            due_items = self.delayed_buffer.pop_due(self._now_ms())
+            if not due_items:
+                return
+            for delayed in due_items:
+                request = self._build_or_delay_request(
+                    delayed.command,
+                    delayed.message_id,
+                    read_at_ms=delayed.read_at_ms,
+                    warning_logged=delayed.warning_logged,
+                )
+                if request is not None:
+                    yield request
+
+    def _build_or_delay_request(
+        self,
+        command: FetchCommand,
+        message_id: str,
+        *,
+        read_at_ms: Optional[int] = None,
+        warning_logged: bool = False,
+    ) -> Optional[scrapy.Request]:
+        if self.egress_selection_strategy != "STICKY_POOL":
+            return self._build_request(command, message_id)
+
+        now_ms = self._now_ms()
+        read_at = read_at_ms if read_at_ms is not None else now_ms
+        host = self._command_host(command)
+        assignment = build_sticky_pool_assignment(
+            host,
+            self.egress_identities,
+            pool_size=self.sticky_pool_size,
+            hash_salt=self.egress_hash_salt,
+            now_ms=now_ms,
+        )
+        metrics.record_sticky_pool_assignment("sticky_pool")
+        host_hash = stable_hash(host, salt=self.egress_hash_salt)
+        host_slowdown_factor = self._host_slowdown_factor(host_hash, now_ms)
+        cooldowns = self._candidate_cooldowns(assignment.candidate_identities, now_ms)
+        try:
+            identity = select_from_sticky_pool(
+                assignment,
+                is_in_cooldown=lambda selected_identity: selected_identity.identity_hash in cooldowns,
+                is_backed_off=lambda selected_host, selected_identity: not pacer_decision(
+                    self._host_ip_pacer_state(
+                        stable_hash(selected_host, salt=self.egress_hash_salt),
+                        selected_identity.identity_hash,
+                    ),
+                    now_ms,
+                ).eligible,
+            )
+        except EgressPolicyError:
+            eligible_at_ms = min(
+                (cooldown.cooldown_until_ms for cooldown in cooldowns.values()),
+                default=now_ms + self.pacer_config.min_delay_ms,
+            )
+            self._delay_command(
+                command,
+                message_id,
+                eligible_at_ms=max(eligible_at_ms, now_ms + 1),
+                read_at_ms=read_at,
+                delay_reason="ip_cooldown",
+                selected_identity_hash="all_candidates",
+                warning_logged=warning_logged,
+                host_hash=host_hash,
+            )
+            return None
+        pacer_key = (host_hash, identity.identity_hash)
+        state = self._host_ip_pacer_state(host_hash, identity.identity_hash)
+        decision = pacer_decision(state, now_ms)
+        if not decision.eligible:
+            metrics.observe_pacer_delay(
+                "host_ip_pacer",
+                decision.delay_ms / 1000.0,
+                host_hash=host_hash,
+                egress_identity_hash=identity.identity_hash,
+            )
+            self._delay_command(
+                command,
+                message_id,
+                eligible_at_ms=decision.next_allowed_at_ms,
+                read_at_ms=read_at,
+                delay_reason="host_ip_pacer",
+                selected_identity_hash=identity.identity_hash,
+                warning_logged=warning_logged,
+                host_hash=host_hash,
+            )
+            return None
+
+        self._pacer_states[pacer_key] = mark_request_started(
+            state,
+            self.pacer_config,
+            now_ms,
+            host_slowdown_factor=host_slowdown_factor,
+        )
+        metrics.record_egress_identity_selected("sticky_pool", identity.identity_type)
+        metrics.observe_sticky_pool_candidate_count("sticky_pool", assignment.pool_size_actual)
+        self._record_delayed_buffer_metrics()
+        return self._build_request(command, message_id, egress_identity=identity, host=host)
+
+    def _log_expired_delayed_commands(self) -> None:
+        if not len(self.delayed_buffer):
+            return
+        now_ms = self._now_ms()
+        for delayed in list(self.delayed_buffer._items):
+            age_seconds = (now_ms - delayed.read_at_ms) / 1000.0
+            if age_seconds < self.max_local_delay_seconds or delayed.warning_logged:
+                continue
+            metrics.record_fetch_queue_event("max_local_delay_exceeded")
+            metrics.record_delayed_message_expired(delayed.delay_reason)
+            self.logger.warning(
+                "fetch_queue_max_local_delay_exceeded message_id=%s delay_reason=%s age_seconds=%.3f",
+                delayed.message_id,
+                delayed.delay_reason,
+                age_seconds,
+            )
+            self.delayed_buffer.mark_warning_logged(delayed.message_id, delayed.selected_identity_hash)
+        self._record_delayed_buffer_metrics()
+
+    def _record_delayed_buffer_metrics(self) -> None:
+        now_ms = self._now_ms()
+        metrics.set_delayed_buffer_state(
+            len(self.delayed_buffer),
+            self.delayed_buffer.oldest_age_seconds(now_ms),
+            self._consumer_metric_label(),
+        )
+
+    def _host_ip_pacer_state(self, host_hash: str, identity_hash: str) -> HostIpPacerState:
+        local = self._pacer_states.get((host_hash, identity_hash), HostIpPacerState())
+        if not self.fetch_safety_store:
+            return local
+        remote = self.fetch_safety_store.get_host_ip_backoff(host_hash, identity_hash)
+        if remote is None:
+            return local
+        if remote.next_allowed_at_ms > local.next_allowed_at_ms:
+            return remote
+        return local
+
+    def _candidate_cooldowns(
+        self,
+        identities: tuple[EgressIdentity, ...],
+        now_ms: int,
+    ) -> dict[str, EgressCooldownState]:
+        return {
+            identity.identity_hash: cooldown
+            for identity in identities
+            for cooldown in (self._identity_cooldown(identity.identity_hash, now_ms),)
+            if cooldown is not None
+        }
+
+    def _identity_cooldown(self, identity_hash: str, now_ms: int) -> Optional[EgressCooldownState]:
+        if not self.fetch_safety_store:
+            return None
+        cooldown = self.fetch_safety_store.get_ip_cooldown(identity_hash)
+        if cooldown is None or cooldown.cooldown_until_ms <= now_ms:
+            return None
+        metrics.record_egress_identity_unavailable("ip_cooldown")
+        metrics.set_ip_cooldown_active(cooldown.reason or "unknown", True)
+        return cooldown
+
+    def _host_slowdown_factor(self, host_hash: str, now_ms: int) -> float:
+        if not self.fetch_safety_store:
+            return self.host_slowdown_factor
+        slowdown = self.fetch_safety_store.get_host_slowdown(host_hash)
+        if slowdown is None or slowdown.slowdown_until_ms <= now_ms:
+            return self.host_slowdown_factor
+        metrics.set_host_slowdown_active(slowdown.reason or "unknown", True)
+        return max(float(slowdown.slowdown_factor), self.host_slowdown_factor)
+
+    def _consumer_metric_label(self) -> str:
+        return getattr(self.consumer, "consumer", None) or getattr(self.consumer, "consumer_name", None) or "unknown"
+
+    def _delay_command(
+        self,
+        command: FetchCommand,
+        message_id: str,
+        *,
+        eligible_at_ms: int,
+        read_at_ms: int,
+        delay_reason: str,
+        selected_identity_hash: str,
+        warning_logged: bool,
+        host_hash: str,
+    ) -> None:
+        delayed = LocalDelayedFetchCommand(
+            command=command,
+            message_id=message_id,
+            eligible_at_ms=eligible_at_ms,
+            read_at_ms=read_at_ms,
+            delay_reason=delay_reason,
+            selected_identity_hash=selected_identity_hash,
+            warning_logged=warning_logged,
+        )
+        if self.delayed_buffer.add(delayed):
+            metrics.record_fetch_queue_event("delayed")
+            return
+        metrics.record_fetch_queue_event("delayed_buffer_full")
+        metrics.record_delayed_buffer_full(self._consumer_metric_label())
+        self.logger.warning(
+            "fetch_queue_delayed_buffer_full message_id=%s host_hash=%s egress_identity_hash=%s delay_reason=%s",
+            message_id,
+            host_hash,
+            selected_identity_hash,
+            delay_reason,
+        )
+
+    @staticmethod
+    def _build_fetch_safety_store(settings) -> Optional[FetchSafetyStateStore]:
+        redis_url = settings.get("EXECUTION_STATE_REDIS_URL") or settings.get("REDIS_URL")
+        if not redis_url:
+            return None
+        try:
+            import redis
+        except ImportError:
+            return None
+        redis_client = redis.Redis.from_url(redis_url, decode_responses=True)
+        return FetchSafetyStateStore(
+            redis_client,
+            key_builder=ExecutionStateKeyBuilder(settings.get("EXECUTION_STATE_REDIS_PREFIX", "crawler:exec:safety")),
+            max_ttl_seconds=settings.getint("EXECUTION_STATE_MAX_TTL_SECONDS", 86400),
+            write_enabled=settings.getbool("EXECUTION_STATE_WRITE_ENABLED", True),
+            fail_open=settings.getbool("EXECUTION_STATE_FAIL_OPEN", True),
+        )
+
+    @staticmethod
+    def _command_host(command: FetchCommand) -> str:
+        return (urlsplit(command.canonical_url).hostname or urlsplit(command.url).hostname or "").lower()
+
+    @staticmethod
+    def _now_ms() -> int:
+        return int(time.time() * 1000)
 
     @staticmethod
     def _record_consumer_heartbeat() -> None:

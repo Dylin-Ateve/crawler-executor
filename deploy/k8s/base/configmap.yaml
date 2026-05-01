@@ -6,6 +6,8 @@ metadata:
     app.kubernetes.io/name: crawler-executor
     app.kubernetes.io/component: fetch-worker
 data:
+  # Environment-specific values should be rendered from deploy/environments/*.env
+  # with deploy/scripts/render-k8s-configmap-from-env.sh before applying.
   fetch_queue_backend: redis_streams
   fetch_queue_stream: crawl:tasks
   fetch_queue_group: crawler-executor
@@ -26,15 +28,51 @@ data:
   crawl_interface: enp0s5
   excluded_local_ips: ""
   local_ip_pool: ""
-  ip_selection_strategy: STICKY_BY_HOST
+  ip_selection_strategy: STICKY_POOL
   ip_failure_threshold: "5"
   ip_failure_window_seconds: "300"
   ip_cooldown_seconds: "1800"
+  egress_selection_strategy: STICKY_POOL
+  sticky_pool_size: "4"
+  egress_identity_source: auto
+  egress_identity_map_file: ""
+  egress_identity_hash_salt: production-egress-v1
+  allow_bind_ip_as_egress_identity: "true"
+  host_ip_min_delay_ms: "2000"
+  host_ip_jitter_ms: "500"
+  host_ip_backoff_base_ms: "5000"
+  host_ip_backoff_max_ms: "300000"
+  host_ip_backoff_multiplier: "2.0"
+  host_slowdown_seconds: "600"
+  host_slowdown_factor: "3.0"
+  local_delayed_buffer_capacity: "100"
+  max_local_delay_seconds: "300"
+  local_delayed_buffer_poll_ms: "500"
+  stop_reading_when_delayed_buffer_full: "true"
+  soft_ban_window_seconds: "300"
+  host_ip_soft_ban_threshold: "2"
+  ip_cross_host_challenge_threshold: "3"
+  host_cross_ip_challenge_threshold: "3"
+  http_429_weight: "3"
+  captcha_challenge_weight: "5"
+  anti_bot_200_weight: "4"
+  http_5xx_weight: "1"
+  timeout_weight: "1"
+  challenge_body_patterns: ""
+  anti_bot_200_patterns: ""
+  execution_state_redis_url: ""
+  execution_state_redis_prefix: crawler:exec:safety
+  execution_state_max_ttl_seconds: "86400"
+  execution_state_write_enabled: "true"
+  execution_state_fail_open: "true"
+  asn_observability_enabled: "false"
+  asn_database_path: ""
+  host_asn_soft_limit_enabled: "false"
   redis_key_prefix: crawler
   enable_p1_persistence: "true"
   object_storage_provider: oci
-  oci_object_storage_bucket: clawer_bucket_prod
-  oci_object_storage_namespace: axfwvgxlpupm
+  oci_object_storage_bucket: CHANGE_ME_BUCKET
+  oci_object_storage_namespace: CHANGE_ME_NAMESPACE
   oci_object_storage_region: us-phoenix-1
   oci_object_storage_endpoint: https://objectstorage.us-phoenix-1.oraclecloud.com
   oci_auth_mode: instance_principal

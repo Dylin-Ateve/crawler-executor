@@ -130,7 +130,7 @@ class LocalIpPool:
 
         if self.strategy == "ROUND_ROBIN":
             return self._select_round_robin(host, blacklist)
-        if self.strategy == "STICKY_BY_HOST":
+        if self.strategy in {"STICKY_BY_HOST", "STICKY_POOL"}:
             return self._select_sticky(host, blacklist)
         raise IpPoolError(f"unsupported IP selection strategy: {self.strategy}")
 

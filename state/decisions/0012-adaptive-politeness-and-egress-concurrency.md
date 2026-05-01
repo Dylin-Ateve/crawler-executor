@@ -26,7 +26,7 @@
 
 ### 1. IP 选择策略
 
-`STICKY_BY_HOST` 保留为 P0 / staging / 历史验证策略，不作为生产终态默认。
+`STICKY_BY_HOST` 保留为 P0 / 历史回退验证策略，不作为 production / staging 默认。
 
 生产方向采用 host-aware sticky pool：
 
@@ -124,4 +124,4 @@ worker 不得无限 `XREADGROUP` 后把不 eligible 的消息长期留在本地 
 - ADR-0011
 - `.specify/memory/architecture.md`
 - `state/roadmap.md`
-- 待新建 spec：自适应 Politeness 与出口并发控制
+- `specs/005-m3a-adaptive-politeness-egress-concurrency/`
