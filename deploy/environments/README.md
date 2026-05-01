@@ -20,7 +20,7 @@
 `staging.env` 是 production 功能验证的等价镜像环境，运行在物理隔离的 staging 集群中：
 
 - namespace、workload 名称、node label key 与操作流程和 production 保持一致
-- `CRAWL_INTERFACE=ens3`
+- `CRAWL_INTERFACE=enp0s5`
 - node label：`scrapy-egress=true`
 - 预期最小 DaemonSet Pod 数：`2`
 - 预期每 node IPv4 数量：`5`（当前 staging 为 1 个 primary + 4 个 secondary；当前 IP 池发现逻辑默认计入 primary）
