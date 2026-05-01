@@ -154,7 +154,7 @@ if [[ "${SKIP_IP_POOL_CHECK}" != "true" ]]; then
     ip_pool_env+=("M3_IP_POOL_EXPECTED_RANGE=${IP_POOL_EXPECTED_RANGE}")
   fi
   kubectl -n "${NAMESPACE}" exec "${sample_pod}" -- \
-    env "${ip_pool_env[@]}" deploy/scripts/inspect-k8s-ip-pool.sh
+    env "${ip_pool_env[@]}" /app/deploy/scripts/inspect-k8s-ip-pool.sh
 fi
 
 echo
