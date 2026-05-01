@@ -22,7 +22,8 @@
 - namespace、workload 名称、node label key 与操作流程和 production 保持一致
 - `CRAWL_INTERFACE=ens3`
 - node label：`scrapy-egress=true`
-- 预期每 node IPv4 数量：`50-60`
+- 预期最小 DaemonSet Pod 数：`2`
+- 预期每 node IPv4 数量：`5`（当前 staging 为 1 个 primary + 4 个 secondary；当前 IP 池发现逻辑默认计入 primary）
 - M3a 策略：`EGRESS_SELECTION_STRATEGY=STICKY_POOL`
 - Redis 执行态写入启用，但 prefix 隔离为 `crawler:exec:safety:staging`
 

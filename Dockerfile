@@ -13,9 +13,11 @@ WORKDIR /app
 
 COPY pyproject.toml setup.py README.md ./
 COPY src ./src
+COPY deploy/scripts/inspect-k8s-ip-pool.sh ./deploy/scripts/inspect-k8s-ip-pool.sh
 
 RUN python -m pip install --upgrade pip \
-    && python -m pip install .
+    && python -m pip install . \
+    && chmod +x /app/deploy/scripts/inspect-k8s-ip-pool.sh
 
 WORKDIR /app/src/crawler
 
