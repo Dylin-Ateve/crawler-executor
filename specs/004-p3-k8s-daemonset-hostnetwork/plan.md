@@ -72,7 +72,7 @@ tests/
 当前第一版模板位于 `deploy/k8s/base/`：
 
 - `configmap.yaml`：非敏感运行参数。
-- `daemonset.yaml`：DaemonSet + `hostNetwork` + `ClusterFirstWithHostNet` + `OnDelete` + 探针 + Prometheus annotation。
+- `daemonset.yaml`：DaemonSet + `hostNetwork` + `ClusterFirstWithHostNet` + `RollingUpdate maxUnavailable=1` + 探针 + Prometheus annotation。
 - `secrets.example.yaml`：仅展示 Secret 名称和 key，禁止替换为真实值后提交。
 
 ## 关键设计约束
@@ -91,7 +91,8 @@ plan 阶段建议默认：
 - `terminationGracePeriodSeconds=30`
 - `safety_margin_ms=30000`
 - `FETCH_QUEUE_CLAIM_MIN_IDLE_MS=60000`
-- `updateStrategy=OnDelete`
+- `updateStrategy=RollingUpdate`
+- `rollingUpdate.maxUnavailable=1`
 - 不承诺 `FETCH_QUEUE_SHUTDOWN_DRAIN_SECONDS` 强制终止 Scrapy in-flight
 - 该默认值服务低频手动滚动，保证 grace 窗口内不抢占退出中 pod 的 PEL；它不承诺覆盖所有长下载、对象存储上传或 Kafka flush 时长，M3 通过 `attempt_id` 幂等接受少量重复抓取
 
@@ -119,7 +120,7 @@ plan 阶段建议默认：
 | 例外项 | 必要原因 | 未采纳更简单方案的原因 |
 |---|---|---|
 | DaemonSet + hostNetwork | 节点本地辅助 IP 是 node 级资源，pod 必须能 bind 宿主机 IP | Deployment 无法天然保证每 node 一个 pod，容易多个 pod 争抢同一 IP 池 |
-| OnDelete 更新策略 | 低频手动滚动、精准调试和 PEL 可恢复姿态需要逐点可控 | RollingUpdate 自动化更强，但会扩大重复抓取窗口和排障范围 |
+| RollingUpdate 更新策略 | staging / production 操作流程统一，支持 `kubectl rollout status` 观察更新；`maxUnavailable=1` 控制滚动窗口 | 自动滚动期间仍可能出现少量重复抓取，需要继续依赖 PEL 与下游幂等 |
 | liveness 不检查外部依赖 | 避免 Kafka / Redis / OCI 短暂抖动触发错误重启 | 把依赖放入 liveness 会制造雪崩重启风险 |
 | debug attempt 走正式 topic + `tier=debug` | 保持端到端真实链路，验证对象存储 / Kafka / 下游过滤 | 独立 topic 或禁用持久化会降低调试链路真实性 |
 | 启动时扫描 IP 池 | 50-70 IP / node 显式配置成本高，扫描更贴合真实网卡状态；运行期 NIC 变化通过重启 pod 生效 | 每 node ConfigMap 可控但维护成本高且易漂移；周期性 rescan 会引入并发修改 IP 池的复杂度 |

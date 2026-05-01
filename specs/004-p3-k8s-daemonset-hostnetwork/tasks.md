@@ -57,7 +57,7 @@
 
 - [x] T023 创建 `deploy/k8s/` 目录结构。
 - [x] T024 创建 DaemonSet 模板，包含 `hostNetwork: true`、`dnsPolicy: ClusterFirstWithHostNet`、nodeSelector、tolerations、Prometheus 端口。
-- [x] T025 设置 updateStrategy 第一版为 `OnDelete`。
+- [x] T025 设置 updateStrategy 为 `RollingUpdate maxUnavailable=1`。
 - [x] T026 创建 ConfigMap 模板，不包含敏感值。
 - [x] T027 创建 Secret 引用模板，仅提供 key 名称和引用方式，不提交真实 secret。
 - [x] T028 定义 resource requests / limits 初始建议，并说明与 IP 池和并发的关系。

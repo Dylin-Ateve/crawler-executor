@@ -66,6 +66,7 @@ kubectl -n "${NAMESPACE}" get daemonset "${DAEMONSET}" >/dev/null
 host_network="$(jsonpath '{.spec.template.spec.hostNetwork}')"
 dns_policy="$(jsonpath '{.spec.template.spec.dnsPolicy}')"
 update_strategy="$(jsonpath '{.spec.updateStrategy.type}')"
+max_unavailable="$(jsonpath '{.spec.updateStrategy.rollingUpdate.maxUnavailable}')"
 termination_grace="$(jsonpath '{.spec.template.spec.terminationGracePeriodSeconds}')"
 node_selector="$(
   daemonset_json_field "data.get('spec', {}).get('template', {}).get('spec', {}).get('nodeSelector', {}).get('${NODE_SELECTOR_KEY}')"
@@ -81,7 +82,8 @@ pause_config_volume="$(jsonpath '{.spec.template.spec.volumes[?(@.name=="crawler
 
 assert_eq "hostNetwork" "${host_network}" "true"
 assert_eq "dnsPolicy" "${dns_policy}" "ClusterFirstWithHostNet"
-assert_eq "updateStrategy" "${update_strategy}" "OnDelete"
+assert_eq "updateStrategy" "${update_strategy}" "RollingUpdate"
+assert_eq "rollingUpdate.maxUnavailable" "${max_unavailable}" "1"
 assert_eq "terminationGracePeriodSeconds" "${termination_grace}" "30"
 assert_eq "nodeSelector.${NODE_SELECTOR_KEY}" "${node_selector}" "${NODE_SELECTOR_VALUE}"
 assert_eq "liveness.path" "${liveness_path}" "/health/liveness"

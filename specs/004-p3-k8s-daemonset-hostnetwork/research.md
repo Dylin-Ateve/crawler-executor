@@ -50,34 +50,34 @@
 
 ## 2. 更新策略
 
-### 选项 A：OnDelete
+### 选项 A：RollingUpdate maxUnavailable=1
+
+优点：
+
+- K8s 原生滚动，操作简单。
+- 支持 `kubectl rollout status`，staging / production 验证步骤一致。
+- 一次最多下线一个 node worker，风险可控。
+
+代价：
+
+- 滚动期间仍可能出现少量重复抓取或 PEL 接管窗口。
+- 如果配置错误，需要依赖 rollout 状态、日志和 PEL 指标快速发现。
+
+当前结论：按 ADR-0013 采纳。
+
+### 选项 B：OnDelete
 
 优点：
 
 - 低频手动滚动最可控。
 - 可以逐 node 排查 IP 池、PEL、Kafka 发布和对象存储行为。
-- 与 ADR-0011 的“允许少量重复抓取但手动可观察”姿态一致。
 
 代价：
 
 - 更新需要人工或运维脚本逐 pod 删除。
-- 自动化程度低。
+- 自动化程度低，容易与 staging / production 等价操作流程不一致。
 
-当前结论：M3 第一版采纳。
-
-### 选项 B：RollingUpdate maxUnavailable=1
-
-优点：
-
-- K8s 自动滚动，操作简单。
-- 一次只下线一个 node worker，风险可控。
-
-代价：
-
-- 对当前 T015c 严格语义未收口更敏感。
-- 如果配置错误，重复抓取或 PEL 波动更难逐点观察。
-
-当前结论：后续可选，不作为 M3 第一版默认。
+当前结论：已被 ADR-0013 替代，不作为当前默认。
 
 ## 3. 关停参数关系
 

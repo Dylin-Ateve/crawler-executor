@@ -151,7 +151,7 @@ kubectl apply --dry-run=server -f deploy/k8s/
 - DaemonSet 包含 `hostNetwork: true`。
 - `dnsPolicy=ClusterFirstWithHostNet`。
 - `nodeSelector.scrapy-egress=true`。
-- updateStrategy 第一版为 `OnDelete`。
+- updateStrategy 为 `RollingUpdate maxUnavailable=1`。
 - Secret 仅引用名称，不包含明文凭据。
 - Prometheus 可通过 pod annotations 抓取 `:9410/metrics`。
 - health probe 使用 `:9411/health/liveness` 与 `:9411/health/readiness`。
@@ -176,7 +176,7 @@ deploy/scripts/run-m3-k8s-daemonset-audit.sh
 - pod 运行在预期 node。
 - pod 使用 host network。
 - pod 暴露 Prometheus 指标端口。
-- DaemonSet 配置满足 `hostNetwork=true`、`ClusterFirstWithHostNet`、`OnDelete`、`terminationGracePeriodSeconds=30`。
+- DaemonSet 配置满足 `hostNetwork=true`、`ClusterFirstWithHostNet`、`RollingUpdate maxUnavailable=1`、`terminationGracePeriodSeconds=30`。
 
 ## Step 4：IP 池发现验证
 

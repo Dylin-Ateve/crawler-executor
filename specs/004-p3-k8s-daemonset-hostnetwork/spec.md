@@ -65,7 +65,7 @@ M3 的目标是把 crawler-executor 推进到 K8s 集群中的节点级常驻部
 
 1. **部署形态**：采用专用 crawler node pool + DaemonSet + `hostNetwork: true` + 每个 node 一个 crawler pod。`dnsPolicy` 使用 `ClusterFirstWithHostNet`。
 2. **调度隔离**：crawler node pool 当前命名为 `scrapy-node-pool`，节点调度 label 为 `scrapy-egress=true`；M3 第一轮实测暂不配置 taint，普通 workload 隔离先依赖专用 node pool + label，taint / toleration 作为后续增强隔离项保留。
-3. **滚动更新策略**：第一版倾向 `OnDelete`，服务低频手动滚动与精确调试；后续如需自动滚动再评估 `RollingUpdate maxUnavailable=1`。
+3. **滚动更新策略**：采用 `RollingUpdate maxUnavailable=1`，服务 staging / production 一致的标准 rollout 操作；消息可靠性继续依赖 PEL 可恢复与 `crawl_attempt` 发布后 ack 语义。
 4. **关停语义**：M3 选择 ADR-0009 的 B 路径：drain 较短，未完成 in-flight 留 PEL，由后续 worker `XAUTOCLAIM` 接管；低频手动滚动、任务幂等、允许少量重复抓取是当前运行假设。
 5. **健康检查口径**：liveness 只检查进程 / reactor / metrics endpoint 基本存活；readiness 不因 Kafka / Redis / OCI 短暂不可达而失败。外部依赖健康通过 Prometheus 指标和告警承接。
 6. **调试事件边界**：debug stream 产生的 `crawl_attempt` 仍发布到正式 Kafka topic，但 Fetch Command 必须携带 `tier=debug`、可识别 `job_id` / `trace_id`，第五类按 `tier=debug` 过滤或单独标记。

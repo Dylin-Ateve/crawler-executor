@@ -11,7 +11,9 @@ spec:
       app.kubernetes.io/name: crawler-executor
       app.kubernetes.io/component: fetch-worker
   updateStrategy:
-    type: OnDelete
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
   template:
     metadata:
       labels:

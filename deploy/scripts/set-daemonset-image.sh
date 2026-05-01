@@ -13,4 +13,4 @@ CONTAINER="${M3_CONTAINER_NAME:-crawler-executor}"
 kubectl -n "${NAMESPACE}" set image "daemonset/${DAEMONSET}" "${CONTAINER}=${IMAGE_REF}"
 
 echo "daemonset_image_updated namespace=${NAMESPACE} daemonset=${DAEMONSET} container=${CONTAINER} image=${IMAGE_REF}"
-echo "note: updateStrategy=OnDelete; delete target pods manually after validation to recreate them with the new image."
+echo "note: updateStrategy=RollingUpdate; use kubectl rollout status daemonset/${DAEMONSET} to observe rollout progress."

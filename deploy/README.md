@@ -43,7 +43,7 @@ deploy/scripts/render-k8s-configmap-from-env.sh | kubectl -n "$M3_K8S_NAMESPACE"
 deploy/scripts/render-k8s-daemonset-from-env.sh | kubectl -n "$M3_K8S_NAMESPACE" apply -f -
 ```
 
-Each target namespace must contain the image pull secret referenced by `M3_IMAGE_PULL_SECRET`:
+每个目标 namespace 都必须包含 `M3_IMAGE_PULL_SECRET` 引用的镜像拉取 Secret：
 
 ```bash
 kubectl create secret docker-registry "$M3_IMAGE_PULL_SECRET" \
@@ -61,10 +61,10 @@ export IMAGE_REF=<registry.example.com/project/crawler-executor:abc1234>
 deploy/scripts/set-daemonset-image.sh
 ```
 
-当前 DaemonSet 使用 `OnDelete` 更新策略。更新 template 后，需要人工删除目标 pod，由 DaemonSet 重建新 pod：
+当前 DaemonSet 使用 `RollingUpdate` 更新策略，`maxUnavailable=1`。更新 template 或镜像后，使用 rollout 状态观察滚动进度：
 
 ```bash
-kubectl -n "$M3_K8S_NAMESPACE" delete pod <crawler-pod>
+kubectl -n "$M3_K8S_NAMESPACE" rollout status daemonset "$M3_DAEMONSET_NAME" --timeout=180s
 ```
 
 敏感配置必须通过目标集群 Secret 注入，不得写入镜像、ConfigMap、Git 或验证日志。
