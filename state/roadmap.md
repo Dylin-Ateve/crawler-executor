@@ -49,8 +49,8 @@
 ### M4：运行时执行策略与停抓控制
 
 - **目标**：在不改变 executor 只执行抓取指令的边界下，补齐 effective policy 契约、本地文件 / ConfigMap provider、运行时热加载、last-known-good、全局 / 作用域 pause、`deadline_at` 与 `max_retries` 生效、严格优雅停机收口和 M4 指标。
-- **状态**：未开始。
-- **对应 spec**：待新建。
+- **状态**：规格草案已创建，尚未进入实现。
+- **对应 spec**：`specs/007-m4-runtime-policy-pause-control/`
 - **前置校准**：`specs/006-policy-scope-and-document-alignment/` 已通过 ADR-0014 移除旧 Heritrix 分组概念和外置 scheduler 旧目标，并补齐 `crawl_attempt` 执行上下文透传。
 - **策略边界**：M4 第一版只消费已经解析好的 effective policy；策略优先级、业务策略合并、Host/Site 成员关系解析、URL 选择、业务优先级和重抓窗口仍归控制平面或第六类，不在 executor 内实现。
 - **最小策略源**：在上游控制平面尚未建成前，使用本地文件 / ConfigMap provider 承载与未来控制平面同形态的 effective policy；该 provider 不是空实现，必须能验证热加载、pause、last-known-good 和作用域覆盖。

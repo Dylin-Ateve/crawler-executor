@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ateve.local/contracts/crawler-executor/effective-policy.v1.schema.json",
+  "title": "Crawler Executor Effective Policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "version", "generated_at", "default_policy"],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "default_policy": {
+      "$ref": "#/$defs/policy"
+    },
+    "scope_policies": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/scope_policy"
+      }
+    }
+  },
+  "$defs": {
+    "scope_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope_type", "scope_id", "policy"],
+      "properties": {
+        "scope_type": {
+          "type": "string",
+          "enum": ["policy_scope_id", "politeness_key", "host_id", "site_id", "tier"]
+        },
+        "scope_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "policy": {
+          "$ref": "#/$defs/policy"
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "paused": {
+          "type": "boolean"
+        },
+        "pause_reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "egress_selection_strategy": {
+          "type": "string",
+          "enum": ["STICKY_POOL", "STICKY_BY_HOST", "ROUND_ROBIN"]
+        },
+        "sticky_pool_size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1024
+        },
+        "host_ip_min_delay_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3600000
+        },
+        "host_ip_jitter_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3600000
+        },
+        "download_timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600
+        },
+        "max_retries": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "max_local_delay_seconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 86400
+        }
+      }
+    }
+  }
+}

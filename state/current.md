@@ -3,7 +3,7 @@
 **更新日期**：2026-05-03
 **对应 commit**：待下次合并后回填
 **对照终态**：`.specify/memory/architecture.md`
-**当前阶段**：P0 核心链路已验证；P1 `crawl_attempt` producer 已通过目标节点 T055 验证。M2 `specs/003-p2-readonly-scheduler-queue/` 已完成目标节点验证。T015c 优雅停机实现已满足 PEL 不清空与可恢复底线，但目标节点验证显示严格 "SIGTERM 后立即停止读 / claim 并在 drain 时限前退出" 未满足；按任务幂等、允许少量重复抓取的运行假设暂时接受为过渡策略。M3 `specs/004-p3-k8s-daemonset-hostnetwork/` 已完成 staging 等价镜像环境验证。M3a `specs/005-m3a-adaptive-politeness-egress-concurrency/` 已完成本地实现、staging OKE 等价镜像环境验证和真实运行 smoke。006 已完成 M4 前置概念校准：不再使用 `HostGroup` 作为 executor 一等概念，不再把 `scrapy-redis` 作为未来运行形态，`crawl_attempt` 开始透传执行上下文。下一步收敛为 M4“运行时执行策略与停抓控制”：先实现 effective policy 本地 provider、热加载、last-known-good、作用域 pause、`deadline_at` / `max_retries` 生效和严格优雅停机；production 复刻验证、Kafka outbox、DLQ 和完整生产观测后置到后续 milestone。
+**当前阶段**：P0 核心链路已验证；P1 `crawl_attempt` producer 已通过目标节点 T055 验证。M2 `specs/003-p2-readonly-scheduler-queue/` 已完成目标节点验证。T015c 优雅停机实现已满足 PEL 不清空与可恢复底线，但目标节点验证显示严格 "SIGTERM 后立即停止读 / claim 并在 drain 时限前退出" 未满足；按任务幂等、允许少量重复抓取的运行假设暂时接受为过渡策略。M3 `specs/004-p3-k8s-daemonset-hostnetwork/` 已完成 staging 等价镜像环境验证。M3a `specs/005-m3a-adaptive-politeness-egress-concurrency/` 已完成本地实现、staging OKE 等价镜像环境验证和真实运行 smoke。006 已完成 M4 前置概念校准：不再使用 `HostGroup` 作为 executor 一等概念，不再把 `scrapy-redis` 作为未来运行形态，`crawl_attempt` 开始透传执行上下文。007 已创建 M4“运行时执行策略与停抓控制”规格草案，规划 effective policy 本地 provider、热加载、last-known-good、作用域 pause、`deadline_at` / `max_retries` 生效和严格优雅停机；production 复刻验证、Kafka outbox、DLQ 和完整生产观测后置到后续 milestone。
 
 ## 1. 当前架构快照
 

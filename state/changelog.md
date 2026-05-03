@@ -6,6 +6,13 @@
 
 ## 2026-05-03
 
+### M4 / 007：运行时执行策略与停抓控制规格草案
+
+- **关联 spec**：`specs/007-m4-runtime-policy-pause-control/`
+- **新增内容**：创建 M4 规格、实施计划、研究记录、数据模型、effective policy 契约、Fetch Command M4 增量契约、M4 指标契约、quickstart 和任务清单。
+- **目标范围**：本地文件 / ConfigMap effective policy provider、热加载、last-known-good、全局 / 作用域 pause、`deadline_at` / `max_retries` 生效、严格优雅停机和 M4 指标。
+- **边界声明**：不实现策略优先级、业务策略合并、Host/Site 成员关系解析、URL 调度、production 复刻验证、Kafka outbox、DLQ 或完整 Grafana / 告警落地。
+
 ### M4 路线图口径校准：运行时执行策略与停抓控制
 
 - **关联文档**：`state/roadmap.md`、`state/current.md`、`README.md`。
