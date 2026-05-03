@@ -6,6 +6,14 @@
 
 ## 2026-05-03
 
+### M4 路线图口径校准：运行时执行策略与停抓控制
+
+- **关联文档**：`state/roadmap.md`、`state/current.md`、`README.md`。
+- **新增规划结论**：M4 从“控制平面执行策略热加载与停抓控制”收敛为“运行时执行策略与停抓控制”，第一版以本地文件 / ConfigMap provider 承载与未来控制平面同形态的 effective policy，不等待完整上游控制平面。
+- **M4 范围**：effective policy 契约、热加载、last-known-good、全局 / 作用域 pause、`deadline_at` / `max_retries` 生效、严格优雅停机收口和 M4 指标。
+- **边界澄清**：executor 不实现策略优先级、业务策略合并、Host/Site 成员关系管理、URL 调度、业务优先级或重抓窗口；这些仍归控制平面或第六类。
+- **后置规划**：production 复刻验证、K8s production 正式部署、Kafka outbox / 故障补偿、poison message / DLQ、完整 Grafana / 告警落地、队列反压治理和长期压测后置到 M5 / M5a。
+
 ### M4 前置 / 006：策略作用域与文档命名校准
 
 - **关联 spec**：`specs/006-policy-scope-and-document-alignment/`

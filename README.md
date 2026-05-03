@@ -54,3 +54,5 @@ crawler-executor 是企业级内容生产系统群中的 **第二类：抓取执
 ## 当前状态
 
 P0 / P1 / P2 已完成目标节点验证；004 与 005 已完成 staging 等价镜像环境验证。006 已完成 M4 前置概念校准：控制平面策略作用域改为中性执行上下文，Redis 下发形态以 Redis / Valkey Streams consumer group 为准，外置 scheduler 不作为运行时目标。
+
+下一步路线图已收敛为 M4“运行时执行策略与停抓控制”：先以本地文件 / ConfigMap provider 实现 effective policy 契约、热加载、last-known-good、作用域 pause、`deadline_at` / `max_retries` 生效和严格优雅停机；production 复刻验证、Kafka outbox / 故障补偿、poison message / DLQ、完整 Grafana / 告警落地后置到后续 milestone。
