@@ -177,6 +177,9 @@ production 与 staging 是物理隔离的两套目标环境，但 staging 的定
 
 终态约束：
 
+- staging 与 production 的人工验证入口默认是跳板机：操作者先登录跳板机，在跳板机上构建镜像、推送镜像、执行 `kubectl`、更新远端 K8s 集群并运行功能验证脚本。
+- 本地开发机可准备代码、文档、模板和验证脚本，但不得假设本地直接具备目标集群 kube context、镜像仓库权限或生产 / staging 网络连通性。
+- staging 与 production 的操作习惯应保持一致：同样通过跳板机执行镜像构建 / 推送、ConfigMap 渲染、DaemonSet 更新、rollout 观察和功能验证；差异只来自目标 kube context、registry / namespace、Secret 和环境 profile。
 - 仓库必须提供容器镜像构建入口，镜像不得内嵌 Redis / Kafka / OCI 等真实凭据。
 - 镜像 tag 必须能追溯到代码版本，推荐使用 git commit SHA 或发布版本号；不得长期依赖 `latest` 作为部署输入。
 - staging 和 production 使用同一镜像构建产物或同一构建流程产出的等价镜像；环境差异通过 ConfigMap / Secret / env 注入，不通过改代码或改镜像表达。
