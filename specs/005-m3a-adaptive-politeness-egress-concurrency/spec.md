@@ -2,7 +2,7 @@
 
 **功能分支**：`005-m3a-adaptive-politeness-egress-concurrency`
 **创建日期**：2026-04-30
-**状态**：草案
+**状态**：已完成（本地实现 + staging 等价镜像环境验证通过；production 复刻待发布流程执行）
 **输入来源**：`.specify/memory/product.md`、`.specify/memory/architecture.md`、`state/current.md`、`state/roadmap.md`、`state/decisions/0003-redis-write-side-belongs-to-scheduler.md`、`state/decisions/0004-use-redis-streams-consumer-group-for-fetch-queue.md`、`state/decisions/0006-ack-fetch-command-after-crawl-attempt-published.md`、`state/decisions/0010-system-group-class-2-positioning.md`、`state/decisions/0012-adaptive-politeness-and-egress-concurrency.md`
 
 ## 定位与边界检查
@@ -11,6 +11,30 @@
 - **产品门禁**：仍服务第二类抓取执行系统；不引入 URL 选择、业务优先级、重抓窗口、解析派发、事实层投影或内容质量判断。
 - **架构边界**：本 spec 只定义执行层短窗口安全控制：sticky-pool、per-(host, ip) pacer、IP cooldown、host slowdown、软封禁反馈、本地有界延迟和相关指标。
 - **相关 ADR**：ADR-0003、ADR-0004、ADR-0006、ADR-0010、ADR-0012。
+
+## 关闭小结
+
+2026-05-03，spec005 以 staging 等价镜像环境为功能验收口径完成关闭。当前系统已经具备准生产级自适应防封禁能力：
+
+- **K8s 常驻执行形态**：DaemonSet + `hostNetwork=true` + 每目标 node 单 worker，支持 health / readiness / Prometheus 暴露。
+- **受控滚动更新**：DaemonSet 采用 `RollingUpdate maxUnavailable=1`，staging / production 使用一致 rollout 观察流程。
+- **多出口 IP 运行时发现**：worker 能在 `enp0s5` 上发现 primary + secondary IPv4，并通过 Scrapy `bindaddress` 使用不同本地 IP 出口。
+- **host-aware sticky-pool**：同一 host 映射到稳定的 K 个出口身份候选池，避免 `host -> 1 IP` 的单点热点。
+- **per-(host, egress identity) pacing**：按 `(host, egress_identity)` 控制最小启动间隔、jitter 和 backoff。
+- **本地有界 delayed buffer**：未 eligible 消息保留在本地有界缓冲，未执行不 ack；buffer 满时停止继续 `XREADGROUP`。
+- **软封禁反馈闭环**：429、challenge、反爬 200、timeout、连接失败和 5xx 被归一化为不同信号，并按 `(host, ip)`、`ip`、`host`、可选 `(host, asn)` 维度影响 backoff / cooldown / slowdown。
+- **Redis TTL 执行态边界**：只写 `EXECUTION_STATE_REDIS_PREFIX` 下短窗口状态，不写 URL 队列、优先级、去重或长期画像事实。
+- **可靠 ack 语义**：仍遵守 `crawl_attempt` 发布成功后才 `XACK`；Kafka failure 或未完成消息留在 PEL。
+- **Kafka 发布链路 smoke**：staging 中 broker 网络、CA 路径和最小 producer publish 已验证。
+- **运行指标可解释性**：已观察到 sticky-pool、egress identity selection、pacer delay、多出口 IP 204 请求和依赖健康等 Prometheus 指标。
+
+不属于本次关闭范围：
+
+- production 复刻验证。
+- Grafana 看板 / 告警。
+- 长期稳定性压测。
+- 控制平面动态策略下发。
+- JS 渲染、浏览器指纹或复杂 TLS 指纹对抗。
 
 ## 背景
 
@@ -183,3 +207,4 @@
 - 2026-04-30：`STICKY_BY_HOST` 保留为 P0 / 回退策略，不作为生产默认。
 - 2026-05-01：staging 与 production 是物理隔离环境，目标验证应复刻 production 功能口径；staging 默认也切换为 `STICKY_POOL`。
 - 2026-04-30：ASN / CIDR 第一版以指标和可选 soft limit 为主，不做云资源自动化。
+- 2026-05-03：staging OKE 等价镜像环境验证通过，spec005 按功能验收口径关闭；production 复刻作为发布验证后续执行。

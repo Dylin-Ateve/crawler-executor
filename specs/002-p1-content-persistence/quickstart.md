@@ -29,7 +29,7 @@
 | `KAFKA_SASL_MECHANISM` | Kafka SASL 机制 | `SCRAM-SHA-512` |
 | `KAFKA_USERNAME` | Kafka 用户名 | 环境变量注入 |
 | `KAFKA_PASSWORD` | Kafka 密码 | 环境变量注入 |
-| `KAFKA_SSL_CA_LOCATION` | Kafka CA 路径 | `/etc/pki/tls/certs/ca-bundle.crt` |
+| `KAFKA_SSL_CA_LOCATION` | Kafka CA 路径 | `/etc/ssl/certs/ca-certificates.crt` |
 | `KAFKA_BATCH_SIZE` | Kafka batch size | `100` |
 | `KAFKA_TOPIC_CRAWL_ATTEMPT` | 抓取 attempt topic | `crawler.crawl-attempt.v1` |
 | `KAFKA_TOPIC_PAGE_METADATA` | P1 第一版已验证 topic，兼容参考 | `crawler.page-metadata.v1` |
@@ -52,13 +52,13 @@ export KAFKA_SECURITY_PROTOCOL="SASL_SSL"
 export KAFKA_SASL_MECHANISM="SCRAM-SHA-512"
 export KAFKA_USERNAME="<ENV_VAR_REFERENCE>"
 export KAFKA_PASSWORD="<ENV_VAR_REFERENCE>"
-export KAFKA_SSL_CA_LOCATION="/etc/pki/tls/certs/ca-bundle.crt"
+export KAFKA_SSL_CA_LOCATION="/etc/ssl/certs/ca-certificates.crt"
 export KAFKA_BATCH_SIZE="100"
 export KAFKA_TOPIC_CRAWL_ATTEMPT="crawler.crawl-attempt.v1"
 export KAFKA_FLUSH_TIMEOUT_MS="130000"
 ```
 
-说明：Oracle Linux 8 默认使用 `/etc/pki/tls/certs/ca-bundle.crt`。如果目标节点不是该路径，程序会在常见 CA bundle 路径中自动兜底；也可以通过 `KAFKA_SSL_CA_LOCATION` 显式指定实际文件。
+说明：当前容器镜像基于 `python:3.11-slim`，默认使用 `/etc/ssl/certs/ca-certificates.crt`。如果后续基础镜像切换为 Oracle Linux / RHEL 系列，需要通过 `KAFKA_SSL_CA_LOCATION` 显式指定容器内实际文件。
 
 ## Step 1：对象存储 smoke test
 

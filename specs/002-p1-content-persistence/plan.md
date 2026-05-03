@@ -76,7 +76,7 @@ Kafka publisher
 | `KAFKA_SASL_MECHANISM` | `SCRAM-SHA-512` | Kafka SASL 机制 |
 | `KAFKA_USERNAME` | 环境变量注入 | 不提交真实值 |
 | `KAFKA_PASSWORD` | 环境变量注入 | 不提交真实值 |
-| `KAFKA_SSL_CA_LOCATION` | `/etc/pki/tls/certs/ca-bundle.crt` | CA 路径 |
+| `KAFKA_SSL_CA_LOCATION` | `/etc/ssl/certs/ca-certificates.crt` | 容器内 CA 路径 |
 | `KAFKA_BATCH_SIZE` | `100` | 用户提供配置 |
 | `KAFKA_TOPIC_CRAWL_ATTEMPT` | `crawler.crawl-attempt.v1` | P1 调整后目标 topic |
 | `KAFKA_TOPIC_PAGE_METADATA` | `crawler.page-metadata.v1` | P1 第一版已验证 topic，保留为兼容参考 |

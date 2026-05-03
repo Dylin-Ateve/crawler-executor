@@ -1,8 +1,26 @@
 # 交付变更记录：crawler-executor
 
-**更新日期**：2026-05-01
+**更新日期**：2026-05-03
 **文档层级**：现状层 / 交付记录
 **排序规则**：倒序记录已合并或已完成验证的 spec 与架构决策。
+
+## 2026-05-03
+
+### M3a / 005：staging 等价镜像环境验证通过
+
+- **关联 spec**：`specs/005-m3a-adaptive-politeness-egress-concurrency/`
+- **关闭结论**：若以 staging 等价镜像环境为功能验收口径，spec005 已完成；production 复刻验证进入后续发布流程。
+- **K8s 验证**：staging OKE `crawler-executor` namespace 中 2 个 `scrapy-egress=true` node 通过 DaemonSet 审计；`hostNetwork=true`、`ClusterFirstWithHostNet`、`RollingUpdate maxUnavailable=1`、health/readiness、每 node 单 Pod 均通过。
+- **IP 池验证**：`enp0s5` 发现 5 个 IPv4，覆盖 1 个 primary + 4 个 secondary；`M3_IP_POOL_EXPECTED_RANGE=5-5` 通过。
+- **M3a 功能验证**：config、sticky-pool、pacer、soft-ban feedback、delayed buffer、Redis boundary 脚本均通过；真实运行指标观察到 sticky-pool assignment、egress identity selection、pacer delay 和多出口 IP 的 204 请求。
+- **Kafka / PEL 验证**：修正 `subnetApp` ingress 使 nodepool `10.0.12.0/22` 可访问 Kafka broker `9092`；修正容器 CA 路径为 `/etc/ssl/certs/ca-certificates.crt`；最小 Kafka producer smoke 返回 `remaining=0 results=['ok']`；测试 PEL 最终清空。
+- **后续**：production 需按 staging 同一流程复刻验证；Object Storage 权限和长期运行看板仍需按生产发布流程补做。
+
+### ADR-0013：K8s DaemonSet 使用 RollingUpdate
+
+- **关联 ADR**：`state/decisions/0013-k8s-daemonset-uses-rolling-update.md`
+- **新增决策**：M3 / M3a DaemonSet 从 `OnDelete` 切换为 `RollingUpdate maxUnavailable=1`，通过 `kubectl rollout status` 统一 staging / production 更新观察流程。
+- **替代关系**：ADR-0011 标记为被 ADR-0013 替代；PEL 可恢复、`crawl_attempt` 发布成功后 ack、Kafka failure 不 ack 语义继续沿用。
 
 ## 2026-05-01
 

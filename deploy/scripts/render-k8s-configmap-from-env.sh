@@ -82,7 +82,7 @@ CONFIG_KEYS = [
     ("kafka_bootstrap_servers", "KAFKA_BOOTSTRAP_SERVERS", ""),
     ("kafka_security_protocol", "KAFKA_SECURITY_PROTOCOL", "SASL_SSL"),
     ("kafka_sasl_mechanism", "KAFKA_SASL_MECHANISM", "SCRAM-SHA-512"),
-    ("kafka_ssl_ca_location", "KAFKA_SSL_CA_LOCATION", "/etc/pki/tls/certs/ca-bundle.crt"),
+    ("kafka_ssl_ca_location", "KAFKA_SSL_CA_LOCATION", "/etc/ssl/certs/ca-certificates.crt"),
     ("kafka_topic_crawl_attempt", "KAFKA_TOPIC_CRAWL_ATTEMPT", "crawler.crawl-attempt.v1"),
     ("kafka_batch_size", "KAFKA_BATCH_SIZE", "100"),
     ("kafka_producer_retries", "KAFKA_PRODUCER_RETRIES", "3"),

@@ -80,7 +80,7 @@ data:
   kafka_bootstrap_servers: CHANGE_ME_BOOTSTRAP_SERVERS
   kafka_security_protocol: SASL_SSL
   kafka_sasl_mechanism: SCRAM-SHA-512
-  kafka_ssl_ca_location: /etc/pki/tls/certs/ca-bundle.crt
+  kafka_ssl_ca_location: /etc/ssl/certs/ca-certificates.crt
   kafka_topic_crawl_attempt: crawler.crawl-attempt.v1
   kafka_batch_size: "100"
   kafka_producer_retries: "3"

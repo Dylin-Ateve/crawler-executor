@@ -92,7 +92,7 @@ P1 不删除旧对象。旧对象清理由 P2 处理；metadata/DB 层后续按 
 | sasl_mechanism | `SCRAM-SHA-512` |
 | sasl_username | 环境变量注入 |
 | sasl_password | 环境变量注入 |
-| ssl_ca_location | `/etc/pki/tls/certs/ca-bundle.crt` |
+| ssl_ca_location | `/etc/ssl/certs/ca-certificates.crt` |
 | batch_size | `100` |
 | topic 自动创建 | 允许 |
 

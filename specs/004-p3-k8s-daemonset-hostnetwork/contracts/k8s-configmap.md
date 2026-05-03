@@ -141,7 +141,7 @@ FETCH_QUEUE_CLAIM_MIN_IDLE_MS >= terminationGracePeriodSeconds * 1000 + safety_m
 | `kafka_bootstrap_servers` | `KAFKA_BOOTSTRAP_SERVERS` | 目标环境填写 | broker 地址不含凭据时可放 ConfigMap。 |
 | `kafka_security_protocol` | `KAFKA_SECURITY_PROTOCOL` | `SASL_SSL` | 非敏感协议参数。 |
 | `kafka_sasl_mechanism` | `KAFKA_SASL_MECHANISM` | `SCRAM-SHA-512` | 非敏感协议参数。 |
-| `kafka_ssl_ca_location` | `KAFKA_SSL_CA_LOCATION` | `/etc/pki/tls/certs/ca-bundle.crt` | 容器内 CA 路径。 |
+| `kafka_ssl_ca_location` | `KAFKA_SSL_CA_LOCATION` | `/etc/ssl/certs/ca-certificates.crt` | 容器内 CA 路径。 |
 | `kafka_topic_crawl_attempt` | `KAFKA_TOPIC_CRAWL_ATTEMPT` | `crawler.crawl-attempt.v1` | P1 / P2 既有 topic。 |
 | `kafka_batch_size` | `KAFKA_BATCH_SIZE` | `100` | Kafka producer 参数。 |
 | `kafka_producer_retries` | `KAFKA_PRODUCER_RETRIES` | `3` | Kafka producer 参数。 |
@@ -247,7 +247,7 @@ data:
   kafka_bootstrap_servers: "<bootstrap-hosts>"
   kafka_security_protocol: SASL_SSL
   kafka_sasl_mechanism: SCRAM-SHA-512
-  kafka_ssl_ca_location: /etc/pki/tls/certs/ca-bundle.crt
+  kafka_ssl_ca_location: /etc/ssl/certs/ca-certificates.crt
   kafka_topic_crawl_attempt: crawler.crawl-attempt.v1
   kafka_batch_size: "100"
   kafka_producer_retries: "3"

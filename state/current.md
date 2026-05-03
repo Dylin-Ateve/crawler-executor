@@ -1,9 +1,9 @@
 # 当前状态：crawler-executor
 
-**更新日期**：2026-05-01
+**更新日期**：2026-05-03
 **对应 commit**：待下次合并后回填
 **对照终态**：`.specify/memory/architecture.md`
-**当前阶段**：P0 核心链路已验证；P1 `crawl_attempt` producer 已通过目标节点 T055 验证。M2 `specs/003-p2-readonly-scheduler-queue/` 已完成目标节点验证。T015c 优雅停机实现已满足 PEL 不清空与可恢复底线，但目标节点验证显示严格 "SIGTERM 后立即停止读 / claim 并在 drain 时限前退出" 未满足；按低频手动滚动、任务幂等、允许少量重复抓取的运行假设暂时接受为过渡策略。M3 `specs/004-p3-k8s-daemonset-hostnetwork/` 已启动并推进到目标集群资源准备阶段，因生产上线前发现功能性遗漏而暂停。M3a `specs/005-m3a-adaptive-politeness-egress-concurrency/` 已完成本地实现与验证脚本，004 可进入恢复前 ConfigMap / 目标节点 smoke 审核。
+**当前阶段**：P0 核心链路已验证；P1 `crawl_attempt` producer 已通过目标节点 T055 验证。M2 `specs/003-p2-readonly-scheduler-queue/` 已完成目标节点验证。T015c 优雅停机实现已满足 PEL 不清空与可恢复底线，但目标节点验证显示严格 "SIGTERM 后立即停止读 / claim 并在 drain 时限前退出" 未满足；按任务幂等、允许少量重复抓取的运行假设暂时接受为过渡策略。M3 `specs/004-p3-k8s-daemonset-hostnetwork/` 已从 `OnDelete` 调整为 `RollingUpdate maxUnavailable=1`。M3a `specs/005-m3a-adaptive-politeness-egress-concurrency/` 已完成本地实现、staging OKE 等价镜像环境验证和真实运行 smoke；下一步可按同一流程复刻 production 验证。
 
 ## 1. 当前架构快照
 
@@ -26,28 +26,45 @@ Scrapy worker
 当前仍是研发验证形态，不是完整终态：
 
 - 已通过 Redis Streams consumer group 目标节点验证；真实第六类生产队列接入仍待上游联调。
-- 004 已完成部分 OKE 现场准备：`scrapy-node-pool`、`scrapy-egress=true`、`enp0s5`、每 node 约 65 个 IPv4、`crawler-executor` namespace、Redis/Kafka Secret key 存在；尚未运行 K8s DaemonSet / hostNetwork 生产部署。
-- 生产防封和吞吐模型已完成 005 本地实现：生产默认切换到 `STICKY_POOL`，支持 host-aware sticky-pool、per-(host, ip) pacer、IP cooldown、host slowdown、软封禁反馈、本地有界 delayed buffer 和 Redis TTL 执行态；仍需目标节点 smoke 验证真实多出口 IP、Redis / Kafka / Object Storage Secret 与 Prometheus 抓取。
+- staging OKE 已完成等价镜像验证：`crawler-executor` namespace、2 个 `scrapy-egress=true` node、DaemonSet `hostNetwork=true`、`RollingUpdate maxUnavailable=1`、每 node 5 个 `enp0s5` IPv4、health/readiness、Kafka publish smoke、Redis Streams PEL 清空均通过。
+- 生产防封和吞吐模型已完成 005 本地与 staging 验证：生产默认切换到 `STICKY_POOL`，支持 host-aware sticky-pool、per-(host, ip) pacer、IP cooldown、host slowdown、软封禁反馈、本地有界 delayed buffer 和 Redis TTL 执行态；production 仍需按 staging 同一流程复刻验证。
 - 尚未交付第五类消费端事实投影。
 - 尚未完成控制平面策略运行时下发。
+
+## 1.1 准生产能力小结
+
+截至 2026-05-03，若以 staging 等价镜像环境为功能验收口径，系统已具备以下准生产级能力：
+
+- K8s DaemonSet 常驻执行，`hostNetwork=true`，每目标 node 一个 worker。
+- `RollingUpdate maxUnavailable=1` 受控滚动更新。
+- `enp0s5` 多 IPv4 发现和 Scrapy `bindaddress` 出口绑定。
+- host-aware sticky-pool，避免 `host -> 1 IP` 的单出口热点。
+- per-(host, egress identity) pacer，支持最小间隔、jitter、backoff 和 delayed buffer。
+- 软封禁反馈按 `(host, ip)`、`ip`、`host`、可选 `(host, asn)` 维度进入短窗口执行安全状态。
+- Redis TTL 执行态边界，禁止写 URL 队列、优先级、去重和长期画像事实。
+- Redis Streams PEL 可恢复，`crawl_attempt` 发布成功后才 `XACK`。
+- Kafka publish smoke、CA 路径和 broker 网络在 staging 通过。
+- Prometheus 已能观察 sticky-pool、pacer、多出口请求结果、反馈信号、执行态读写和依赖健康。
+
+production 仍需按 staging 同一流程复刻验证；Grafana / 告警、长期压测、控制平面动态策略下发和 IaC 不属于当前已完成能力。
 
 ## 2. 模块矩阵
 
 | 终态能力 | 当前状态 | 当前证据 / 说明 |
 |---|---|---|
 | Scrapy 执行框架 | 部分完成 | 已建立 Scrapy 项目、middleware、spider、pipeline；尚未进入完整生产调度与部署。 |
-| 多出口 IP 轮换 | 部分完成 | 单节点真实 Linux + 多辅助 IP + EIP 映射已验证；005 已实现 host-aware sticky-pool；K8s hostNetwork 形态未验证。 |
-| IP 健康检查与黑名单 | 部分完成 | Valkey/Redis 失败计数、TTL 黑名单、Prometheus 指标已验证；005 已补齐 soft-ban signal、`(host, ip)` backoff、IP cooldown、host slowdown 和可选 ASN soft limit；目标节点 smoke 未执行。 |
-| Politeness 策略 | 部分完成 | 已忽略 robots.txt，并保留并发、延迟、重试 fallback；005 已实现 ADR-0012 的自适应防封闭环，本地验证通过，控制平面运行时下发未完成。 |
+| 多出口 IP 轮换 | 部分完成 | 单节点真实 Linux + 多辅助 IP + EIP 映射已验证；005 已实现 host-aware sticky-pool；staging K8s hostNetwork 下每 node 5 个 IPv4 验证通过，production 仍需复刻。 |
+| IP 健康检查与黑名单 | 部分完成 | Valkey/Redis 失败计数、TTL 黑名单、Prometheus 指标已验证；005 已补齐 soft-ban signal、`(host, ip)` backoff、IP cooldown、host slowdown 和可选 ASN soft limit；staging 运行指标验证通过。 |
+| Politeness 策略 | 部分完成 | 已忽略 robots.txt，并保留并发、延迟、重试 fallback；005 已实现 ADR-0012 的自适应防封闭环，本地与 staging 验证通过，控制平面运行时下发未完成。 |
 | 分布式调度只读消费 | 完成 P2 目标节点验证；优雅停机严格语义未收口 | 003 已验证 Redis Streams consumer group 单 worker、多 worker、fetch failed、无效消息和 Kafka failure / PEL reclaim；不引入 scrapy-redis 默认 scheduler / dupefilter。只读边界脚本已覆盖 key diff 与目标 stream `XLEN` 前后不变。优雅停机目标节点验证显示当前实现不清空 PEL，但 SIGTERM 后 shutdown flag 触发较晚，退出中的 worker 仍可能继续 claim / 重复处理；当前仅按低频手动滚动、任务幂等、允许少量重复抓取的过渡策略接受。 |
 | HTML 对象存储 | 完成 P1 切片 | OCI Object Storage 写入、读取、gzip 校验和失败保护已验证；生命周期策略未配置。 |
 | `crawl_attempt` producer | 完成 P2 验证切片 | 目标节点验证覆盖 stored / skipped / storage failed / Kafka failure 分支；003 已补强连接级 fetch failed 事件化。 |
 | 第五类事实投影 | 不属于本系统 | PostgreSQL pages/crawl_logs 等由第五类消费端承接，本仓库只保留 producer 契约。 |
 | ClickHouse Host 画像 | 不属于本系统 | 已明确归第五类，当前不在本仓库实现。 |
 | 下游 Python 解析服务 | 不属于本系统 | 第三类订阅事件自取 storage_key，本系统不派发 parse-tasks。 |
-| K8s 部署 | 已启动但暂停 | 004 已形成 DaemonSet + hostNetwork 模板、探针、配置分层和目标集群审计脚本；目标 OKE 现场已记录：`scrapy-node-pool`、`subnetCollection`、`scrapy-egress=true`、`enp0s5`、每 node 约 65 个 IPv4、Redis/Kafka Secret key 存在。005 已补齐生产策略参数并更新 base ConfigMap / DaemonSet env；ConfigMap、DaemonSet 和集群消费验证仍未执行。 |
+| K8s 部署 | staging 通过 | 004 已形成 DaemonSet + hostNetwork 模板、探针、配置分层和目标集群审计脚本；005 staging 已验证 `RollingUpdate maxUnavailable=1`、每 node 单 Pod、IP 池发现、health/readiness、Kafka publish smoke 和 PEL 清空。production 仍需复刻同一流程。 |
 | Terraform / cloud-init 自动化 | 暂不规划 | 当前不进入近期规划，后续规模化时再评估。 |
-| Prometheus 指标 | 部分完成 | 已有请求、耗时、IP、黑名单、存储、Kafka producer 指标；005 已补 sticky-pool、pacer、delayed buffer、feedback、cooldown、slowdown、Redis 执行态指标；集群级队列、lag、资源面板未完成。 |
+| Prometheus 指标 | 部分完成 | 已有请求、耗时、IP、黑名单、存储、Kafka producer 指标；005 已补 sticky-pool、pacer、delayed buffer、feedback、cooldown、slowdown、Redis 执行态指标；staging 已观察到 sticky-pool、pacer、多 egress IP 204 请求指标，集群级队列、lag、资源面板未完成。 |
 | Grafana / 告警 | 未完成 | 尚未配置看板和告警规则。 |
 | 24 小时稳定性与 Heritrix 对比 | 未完成 | P0 已决定后置，不阻塞 P1。 |
 
@@ -57,10 +74,10 @@ Scrapy worker
 |---|---|---|
 | 更换爬虫框架为 Scrapy | 部分完成 | Scrapy worker、spider、middleware、pipeline 已实现并通过真实节点验证。 |
 | 多出口 IP 轮换 | 部分完成 | P0 Step 5a/5b 验证多本地 IP 与多个公网 EIP。 |
-| 可控 Politeness 策略 | 部分完成 | 支持并发、单域名并发、延迟、重试和 robots 关闭；005 已补齐 sticky-pool、per-(host, ip) pacing、软封禁反馈和本地有界延迟，本地验证通过，目标节点 smoke 待执行。 |
+| 可控 Politeness 策略 | 部分完成 | 支持并发、单域名并发、延迟、重试和 robots 关闭；005 已补齐 sticky-pool、per-(host, ip) pacing、软封禁反馈和本地有界延迟，本地与 staging 验证通过。 |
 | 大规模持久化存储 | 部分完成 | HTML 写入对象存储与 `crawl_attempt` producer 已完成；消费端事实投影归第五类。 |
 | Host 画像分析能力 | 不属于本系统 | 画像与事实层归第五类。 |
-| 可运维 K8s 化部署 | 未完成 | 当前仍是目标节点脚本验证，未进入 K8s/IaC。 |
+| 可运维 K8s 化部署 | staging 通过 | staging OKE DaemonSet + hostNetwork + RollingUpdate 验证通过；production/IaC 尚未完成。 |
 
 ## 4. 原始实施计划对照
 
@@ -68,7 +85,7 @@ Scrapy worker
 
 | 事项 | 状态 | 备注 |
 |---|---|---|
-| 单节点 hostNetwork DaemonSet bind 辅助 IP | 未完成 | 已验证真实 Linux 单节点 bindaddress，但不是 K8s hostNetwork。 |
+| 单节点 hostNetwork DaemonSet bind 辅助 IP | staging 通过 | staging K8s hostNetwork 下 `enp0s5` 发现 5 个 IPv4，绑定访问与 smoke 指标通过。 |
 | 最小化 Scrapy：多 IP 轮换 + Redis 黑名单 | 完成 | P0 已实现并验证。 |
 | echo endpoint 多 IP 生效 | 完成 | httpbin/ip 等 echo endpoint 已验证。 |
 | 24 小时 vs 单 IP Heritrix 对比 | 未完成 | 后置，未作为进入 P1 的阻塞项。 |
@@ -117,7 +134,7 @@ Scrapy worker
 
 - D-DEBT-1：URL 归一化库 Python 实现先由本系统持有，后续迁移到契约仓库。
 - D-DEBT-2：`crawl_attempt` schema 暂在本仓库，后续迁移到契约仓库。
-- D-DEBT-3：005 已补齐 env / ConfigMap 参数化的自适应防封闭环；后续仍需接控制平面运行时下发。
+- D-DEBT-3：005 已补齐 env / ConfigMap 参数化的自适应防封闭环，并通过 staging 验证；后续仍需接控制平面运行时下发。
 - D-DEBT-4：`content_sha256` 当前只覆盖 HTML 快照场景。
 - D-DEBT-5：P2 只读边界目标节点脚本已覆盖 Redis key diff 与目标 stream `XLEN` 前后对比，后续可继续补允许状态变化清单和更宽 audit pattern。
 - D-DEBT-6：T015c 优雅停机当前只满足 PEL 不清空与可恢复底线；严格 "SIGTERM 后立即停止 `XREADGROUP` / `XAUTOCLAIM`、drain deadline 前退出" 未满足，后续需修正更早停机入口或调整 ADR-0009 / FR-022 的严格语义。
@@ -130,6 +147,6 @@ Scrapy worker
 - 请求总数、HTTP 状态码计数。
 - 响应耗时。
 - 活跃 IP 数、黑名单数量。
-- sticky-pool、per-(host, ip) backoff、IP cooldown、host slowdown、challenge rate 等指标仍待新增。
+- sticky-pool、per-(host, ip) backoff、IP cooldown、host slowdown、challenge rate 等指标已补齐，staging 已观察到 sticky-pool、pacer 与多出口请求指标；仍需生产看板化。
 - 对象存储上传结果。
 - Kafka producer 发布结果。

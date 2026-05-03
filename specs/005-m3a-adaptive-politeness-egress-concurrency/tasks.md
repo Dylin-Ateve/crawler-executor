@@ -1,8 +1,8 @@
 # 任务：M3a 自适应 Politeness 与出口并发控制
 
 **输入**：`spec.md`、`plan.md`、`research.md`、`data-model.md`、`contracts/`
-**前置条件**：P2 Redis Streams 队列消费目标节点验证通过；ADR-0012 已接受；004 保持暂停。
-**当前状态**：草案已创建，等待进入实现。
+**前置条件**：P2 Redis Streams 队列消费目标节点验证通过；ADR-0012 已接受。
+**当前状态**：已完成。本地实现、验证脚本与 staging OKE 等价镜像环境验证均已通过；production 复刻验证作为发布流程后续执行。
 
 ## 阶段 1：规格与契约
 
@@ -69,6 +69,7 @@
 - [x] T043 编写 `deploy/scripts/run-m3a-delayed-buffer-validation.sh`。
 - [x] T044 编写 `deploy/scripts/run-m3a-redis-boundary-validation.sh`。
 - [x] T045 在本地或目标节点执行 005 验证脚本，记录结果到 `quickstart.md` 或验证报告。
+- [x] T045a 在 staging OKE 等价镜像环境完成 DaemonSet、IP 池、Kafka publish smoke、PEL 清空和 M3a runtime 指标验证。
 
 ## 阶段 8：004 恢复准备
 
@@ -77,6 +78,7 @@
 - [x] T048 更新 004 quickstart 的恢复入口，加入 005 验证通过作为前置条件。
 - [x] T049 更新 `state/current.md`、`state/roadmap.md`、`state/changelog.md`，记录 005 验证状态。
 - [x] T050 若 005 实现发现需要写长期画像事实或非 TTL 状态，先新增 ADR，再继续；本轮未引入长期画像事实或非 TTL 状态。
+- [x] T051 关闭 spec005，补充系统能力、staging 验证结果和 runtime 监控指标维度小结。
 
 ## 依赖与执行顺序
 

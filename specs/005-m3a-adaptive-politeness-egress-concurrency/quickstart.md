@@ -64,7 +64,30 @@ T019 完成后以 `EGRESS_SELECTION_STRATEGY` 作为 005 策略入口，`IP_SELE
 | `deploy/scripts/run-m3a-redis-boundary-validation.sh` | 通过 |
 | `.venv/bin/pytest tests/unit/test_egress_identity.py tests/unit/test_egress_policy.py tests/unit/test_politeness.py tests/unit/test_response_signals.py tests/unit/test_fetch_safety_state.py tests/unit/test_soft_ban_feedback.py tests/unit/test_fetch_queue_m3a.py tests/integration/test_egress_middleware.py tests/unit/test_ip_pool.py` | 通过，59 passed |
 
-目标节点 smoke 仍需在恢复 004 前执行，尤其需要确认真实多出口 IP、Redis / Kafka / Object Storage Secret 和 Prometheus 抓取。
+## staging 验证记录
+
+2026-05-03 staging OKE 验证通过。staging 定位为 production 功能验证的等价镜像环境；本轮仅因资源规模与物理拓扑不同，使用 2 个 `scrapy-egress=true` node，每 node `enp0s5` 暴露 1 个 primary + 4 个 secondary IPv4。
+
+关闭结论：若以 staging 为功能验收准绳，spec005 目标已达成；production 复刻验证属于发布流程，不阻塞 spec005 功能关闭。
+
+| 验证项 | 结果 | 证据 |
+|---|---|---|
+| K8s DaemonSet 审计 | 通过 | `run-m3-k8s-daemonset-audit.sh` 输出 `m3_k8s_daemonset_audit_ok`。 |
+| RollingUpdate | 通过 | `updateStrategy=RollingUpdate`，`rollingUpdate.maxUnavailable=1`。 |
+| Pod 分布 | 通过 | 2 个 Pod 分别运行在 `10.0.13.55` 与 `10.0.14.78`。 |
+| hostNetwork / health / readiness | 通过 | `hostNetwork=true`，liveness / readiness 均返回 ok / ready。 |
+| IP 池发现 | 通过 | `enp0s5` 发现 5 个 IPv4，`expected_range=5-5`，`local_ip_pool_size=5`。 |
+| M3a 功能脚本 | 通过 | config、sticky-pool、pacer、soft-ban feedback、delayed buffer、Redis boundary 均通过；sticky-pool 使用真实 staging IP 池补跑。 |
+| Kafka 网络 | 通过 | nodepool `10.0.12.0/22` 到 subnetApp broker `9092` 连通；bootstrap、br1、br2 均 TCP ok。 |
+| Kafka CA / publish smoke | 通过 | `KAFKA_SSL_CA_LOCATION=/etc/ssl/certs/ca-certificates.crt`，最小 producer smoke `remaining=0 results=['ok']`。 |
+| PEL 恢复 / 清理 | 通过 | 历史 smoke 消息确认后清理，最终 `xpending={'pending': 0}`。 |
+| M3a 运行指标 | 通过 | 观察到 `crawler_egress_identity_selected_total`、`crawler_sticky_pool_assignments_total`、`crawler_pacer_delay_seconds`、多 egress IP 的 `204` 请求计数。 |
+
+验证期间发现并修正：
+
+- `subnetApp` 原 ingress 只允许 `10.0.12.0/24 -> TCP 9092`，但 nodepool 子网 `subnetCollection` 为 `10.0.12.0/22`，实际 IP 覆盖 `10.0.12.0 - 10.0.15.255`；已按 nodepool CIDR 放通 Kafka `9092`。
+- `python:3.11-slim` 容器内 CA bundle 路径为 `/etc/ssl/certs/ca-certificates.crt`，已替换原 Oracle Linux / RHEL 风格路径 `/etc/pki/tls/certs/ca-bundle.crt`。
+- 目标环境改为 `RollingUpdate maxUnavailable=1`，并由 ADR-0013 替代 ADR-0011 的 `OnDelete` 口径。
 
 ## Step 1：静态配置审计
 
@@ -206,6 +229,8 @@ deploy/scripts/run-m3a-redis-boundary-validation.sh
 - 同一 `(host, egress_identity)` 未过密启动。
 - soft-ban 反馈能影响后续选择。
 - 无禁止 Redis 写入。
+
+staging 结果：2026-05-03 已通过。真实运行指标显示 sticky-pool 选择、pacer delay、多出口 IP 204 请求均产生；Kafka publish smoke 成功，Redis Streams PEL 最终清空。
 
 ## Step 8：004 恢复前检查
 

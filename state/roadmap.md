@@ -1,6 +1,6 @@
 # 演进路线图：crawler-executor
 
-**更新日期**：2026-05-01
+**更新日期**：2026-05-03
 **文档层级**：现状层 / 路线图
 **组织方式**：按能力里程碑组织，不按固定时间承诺。
 
@@ -32,19 +32,19 @@
 ### M3：生产部署基础
 
 - **目标**：K8s DaemonSet + hostNetwork、健康探针、指标端口、配置注入和节点隔离。
-- **状态**：已暂停。004 已完成部署方案、模板和部分目标集群资源准备；因生产上线前发现功能性遗漏，暂不继续部署。
+- **状态**：staging 验证通过，production 待复刻。004 已完成部署方案、模板和 staging 集群验证；生产部署前发现的 005 功能性遗漏已在 M3a 中补齐。
 - **对应 spec**：`specs/004-p3-k8s-daemonset-hostnetwork/`
-- **当前现场**：`scrapy-node-pool`、`subnetCollection`、`scrapy-egress=true`、`enp0s5`、两个 node、每 node 约 65 个 IPv4；`crawler-executor` namespace 已创建；Redis/Kafka Secret key 已存在；Redis TCP 连通与 Kafka 连通性暂认定，协议级 / 发布级验证待补。
-- **恢复条件**：005 已完成本地实现与验证脚本；Redis PING、Kafka publish smoke、Object Storage 权限、005 目标节点 smoke 和真实 ConfigMap 审核通过后，再恢复 DaemonSet dry-run 与目标集群验证。
+- **当前现场**：staging `scrapy-node-pool`、`subnetCollection 10.0.12.0/22`、`scrapy-egress=true`、`enp0s5`、2 个 node、每 node 5 个 IPv4；`crawler-executor` namespace、Redis/Kafka Secret、DaemonSet、ConfigMap、Kafka publish smoke 和 Redis Streams PEL 清空均已验证通过。
+- **恢复条件**：staging 已满足；production 需按 staging 同一流程复刻 Redis PING、Kafka publish smoke、Object Storage 权限、真实 ConfigMap 审核、DaemonSet dry-run / apply 和集群审计。
 - **验收信号**：节点扩缩容时 worker 自动跟随；liveness 仅反映进程 / reactor / metrics endpoint 基本存活；Kafka / Redis / OCI 依赖异常通过 Prometheus 指标和告警反映，不因短暂抖动触发探针失败。
 
 ### M3a：自适应 Politeness 与出口并发控制
 
 - **目标**：在大出口 IP 池下补齐生产防封与吞吐模型，包括 host-aware sticky-pool、per-(host, ip) downloader slot、IP 级 cooldown、host 级降速、软封禁反馈和有界本地延迟。
-- **状态**：本地实现与验证脚本已完成；目标节点 smoke 待执行。
+- **状态**：本地实现、验证脚本与 staging 目标环境 smoke 均已通过；production 待复刻。
 - **依赖 ADR**：ADR-0012。
 - **对应 spec**：`specs/005-m3a-adaptive-politeness-egress-concurrency/`
-- **验收信号**：同一 host 可在 K 个出口身份间受控轮转；429 / CAPTCHA / challenge / 反爬 200 页能按 `(host, ip)`、`ip`、`host` 维度触发不同退避；本地 delayed buffer 有容量和时间上限，buffer 满时停止 `XREADGROUP`；不会写 URL 队列、优先级或长期画像事实。本地脚本已覆盖上述核心口径，真实多出口 IP 目标节点 smoke 仍待恢复 004 前补做。
+- **验收信号**：同一 host 可在 K 个出口身份间受控轮转；429 / CAPTCHA / challenge / 反爬 200 页能按 `(host, ip)`、`ip`、`host` 维度触发不同退避；本地 delayed buffer 有容量和时间上限，buffer 满时停止 `XREADGROUP`；不会写 URL 队列、优先级或长期画像事实。本地脚本与 staging 真实多出口 IP smoke 已覆盖上述核心口径。
 
 ### M4：控制平面策略运行时覆盖
 
@@ -66,7 +66,7 @@
 |---|---|---|---|
 | D-DEBT-1 | URL 归一化库 Python 实现先由本系统持有 | 当前保留在 `src/crawler/crawler/contracts/canonical_url.py` | 契约仓库提供官方 Python 实现和共享黄金测试集 |
 | D-DEBT-2 | 事件 topic 与 schema 暂在本仓库 | 当前位于 `specs/002-p1-content-persistence/contracts/` | 系统群契约仓库建成并接管事件 schema |
-| D-DEBT-3 | Politeness 仍以 env / ConfigMap 静态参数为主 | 005 已按 ADR-0012 补齐自适应防封闭环 | 控制平面策略下发链路可用 |
+| D-DEBT-3 | Politeness 仍以 env / ConfigMap 静态参数为主 | 005 已按 ADR-0012 补齐自适应防封闭环并通过 staging 验证 | 控制平面策略下发链路可用 |
 | D-DEBT-4 | `content_sha256` 只覆盖 HTML 快照场景 | 当前仅在 `storage_result=stored` 时计算 | 上层架构要求所有响应统一 Raw 指纹 |
 | D-DEP-1 | 短窗口执行安全状态与第五类长期画像事实边界待契约化 | 当前以本系统本地短窗口判断为准 | 第五类发布 Host / IP / ASN 画像事实与执行缓存切分契约 |
 
@@ -74,8 +74,8 @@
 
 1. Redis 只读边界审计补强：在现有 key diff + `XLEN` 前后对比之外，增加允许状态变化清单和更宽 audit pattern。
 2. T015c 严格优雅停机收口：更早设置 shutdown flag，确保 SIGTERM 后立即停止 `XREADGROUP` / `XAUTOCLAIM`，并明确 drain deadline 是否强制退出。
-3. 005 目标节点 smoke：真实多出口 IP 下验证 sticky-pool、pacer、soft-ban feedback、delayed buffer、Redis 写入边界和指标抓取。
-4. K8s DaemonSet + hostNetwork 部署。004 已暂停，等待 005 目标节点 smoke 和 ConfigMap 审核后恢复。
+3. production 复刻 staging 验证：真实多出口 IP 下验证 sticky-pool、pacer、soft-ban feedback、delayed buffer、Redis 写入边界、Kafka publish smoke、Object Storage 权限和指标抓取。
+4. K8s DaemonSet + hostNetwork production 部署。staging 已通过，production 仍需 dry-run、apply 与集群审计。
 5. Grafana 基础看板、告警和运维 SOP。
 6. 24 小时稳定性压测、30-50 pages/sec 单节点目标验证。
 7. 控制平面策略运行时覆盖。
@@ -95,7 +95,7 @@
 
 ## 5. 下一阶段建议
 
-004 已暂停，不继续推进生产部署。005 本地实现与验证脚本已收口，下一步应在目标节点执行 005 smoke，确认真实多出口 IP、Redis / Kafka / Object Storage Secret 与 Prometheus 抓取后，再恢复 004 的 ConfigMap 审核、DaemonSet dry-run 与目标集群验证。
+staging 已作为 production 功能验证等价镜像环境完成 004 / 005 联合验证。下一步应按同一操作流程在 production 复刻：确认 node pool / subnet / node label / taint 口径一致，补齐 production 网络规则、Secret、ConfigMap 审核、DaemonSet dry-run / apply、Kafka publish smoke、Object Storage 权限和 PEL 清空验证。
 
 M3 第一版仍按 T015c 过渡运行假设设计：低频手动滚动、任务幂等、允许少量重复抓取、PEL 可恢复。若后续滚动重启频率提高或重复抓取不可接受，应先修正严格优雅停机入口与 drain deadline，再恢复 004 部署推进。
 
