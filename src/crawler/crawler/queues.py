@@ -27,6 +27,7 @@ class FetchCommand:
     site_id: Optional[str] = None
     tier: Optional[str] = None
     politeness_key: Optional[str] = None
+    policy_scope_id: Optional[str] = None
     deadline_at: Optional[str] = None
     max_retries: Optional[int] = None
     stream_id: Optional[str] = None
@@ -42,6 +43,7 @@ class FetchCommand:
             "site_id": self.site_id,
             "tier": self.tier,
             "politeness_key": self.politeness_key,
+            "policy_scope_id": self.policy_scope_id,
             "deadline_at": self.deadline_at,
             "max_retries": self.max_retries,
             "attempt_id": self.attempt_id,
@@ -99,6 +101,7 @@ def parse_fetch_command(fields: Mapping[object, object], *, stream_id: Optional[
         site_id=_optional(decoded, "site_id"),
         tier=_optional(decoded, "tier"),
         politeness_key=_optional(decoded, "politeness_key"),
+        policy_scope_id=_optional(decoded, "policy_scope_id"),
         deadline_at=_optional(decoded, "deadline_at"),
         max_retries=_optional_int(decoded, "max_retries"),
         stream_id=stream_id,

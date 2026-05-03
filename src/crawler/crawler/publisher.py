@@ -99,9 +99,6 @@ class ConfluentKafkaCrawlAttemptPublisher:
                 pass
             raise PublishError(f"failed to publish crawl attempt key={key}: flush timeout with {pending} pending message(s)")
 
-    def publish_page_metadata(self, key: str, payload: Dict[str, object]) -> None:
-        self.publish_crawl_attempt(key, payload)
-
 
 class FakeCrawlAttemptPublisher:
     def __init__(self, topic: str = "crawler.crawl-attempt.v1", fail_publish: bool = False) -> None:
@@ -113,15 +110,6 @@ class FakeCrawlAttemptPublisher:
         if self.fail_publish:
             raise PublishError(f"fake publish failure key={key}")
         self.messages.append({"topic": self.topic, "key": key, "payload": payload})
-
-    def publish_page_metadata(self, key: str, payload: Dict[str, object]) -> None:
-        self.publish_crawl_attempt(key, payload)
-
-
-PageMetadataPublisher = CrawlAttemptPublisher
-ConfluentKafkaPageMetadataPublisher = ConfluentKafkaCrawlAttemptPublisher
-FakePageMetadataPublisher = FakeCrawlAttemptPublisher
-
 
 def resolve_ssl_ca_location(configured_path: str) -> str:
     if configured_path and os.path.exists(configured_path):
@@ -155,7 +143,3 @@ def build_crawl_attempt_publisher(settings) -> CrawlAttemptPublisher:
         flush_timeout_ms=settings.getint("KAFKA_FLUSH_TIMEOUT_MS", 130000),
     )
     return ConfluentKafkaCrawlAttemptPublisher(config)
-
-
-def build_page_metadata_publisher(settings) -> CrawlAttemptPublisher:
-    return build_crawl_attempt_publisher(settings)

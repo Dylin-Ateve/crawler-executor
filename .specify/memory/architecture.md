@@ -51,7 +51,7 @@ crawler-executor 的终态边界是：
                           v
               +------------------------+
               | 第六类：调度与决策      |
-              | Redis 队列写入 / 参数   |
+              | Streams 队列写入 / 参数 |
               +-----------+------------+
                           |
                           | 抓取指令（URL + 参数）
@@ -76,7 +76,7 @@ crawler-executor 的终态边界是：
 
 ## 5. 终态数据流
 
-1. 第六类写入 Redis 队列并下发抓取参数。
+1. 第六类写入 Redis / Valkey Streams 队列并下发抓取参数。
 2. crawler-executor 只读消费 URL。
 3. 入口处执行 canonical URL 归一化，生成 `url_hash`。
 4. 创建 `attempt_id`，按 host-aware sticky-pool / adaptive egress policy 选择本地出口 IP。
@@ -110,11 +110,13 @@ crawler-executor 的终态边界是：
 - 支持全局并发、sticky-pool、per-(host, ip) pacer、单 IP token / cooldown、host 级降速、请求间隔、随机抖动、重试边界、下载超时和 UA 策略。
 - 显式忽略 `robots.txt`，但必须保留合理并发和请求间隔。
 - 静态 `DOWNLOAD_DELAY` / `CONCURRENT_REQUESTS_PER_DOMAIN` 只能作为 fallback；生产方向采用观测驱动的自适应防封闭环。
-- 运行时参数终态由控制平面按 Tier / Site / HostGroup 下发；本系统只保留兜底默认值。
+- 运行时参数终态由控制平面按 `tier` / `site_id` / `host_id` / `politeness_key` / `policy_scope_id` 等执行策略作用域下发；本系统只保留兜底默认值。
+- `policy_scope_id` 是控制平面或第六类解析后的 opaque identifier；本系统不维护策略分组成员关系。
 
 ### 6.4 调度
 
-- Redis / scrapy-redis 形态只作为第六类下发接口。
+- Redis / Valkey Streams consumer group 是当前已接受的第六类 Fetch Command 下发载体。
+- 本系统不使用 Scrapy 外置 scheduler / dupefilter 方案，不接管 URL 去重、优先级或调度状态。
 - 本系统只读消费，不写入新 URL，不维护跨节点去重过滤器。
 - 本系统允许写入 TTL、命名空间隔离的短窗口执行安全状态，但不得表达 URL 选择、优先级、重抓窗口、去重结果或长期画像事实。
 - 页面链接发现不进入本系统队列。
@@ -208,7 +210,7 @@ production 与 staging 是物理隔离的两套目标环境，但 staging 的定
 - `url_hash`：基于 canonical URL 的逻辑页面标识。
 - `snapshot_id`：仅快照场景存在，区分同一 URL 多次抓取的独立对象。
 - `content_sha256`：SHA-256 on 未压缩 HTML body，仅在 HTML 快照场景成立；概念上对应上层架构文档 10.7 的 Raw 指纹在 HTML 快照上下文里的落地。
-- Host + Site 双层 ID 必须随事件输出，避免下游反查映射。
+- 上游若提供 `host_id`、`site_id`、`tier`、`politeness_key` 或 `policy_scope_id`，必须随 `crawl_attempt` 透传，避免下游反查映射；缺失时事件仍携带 canonical host 作为执行事实。
 
 ## 9. 演进债务与依赖
 
@@ -276,7 +278,6 @@ production 与 staging 是物理隔离的两套目标环境，但 staging 的定
 ## 13. 参考资料
 
 - Scrapy 官方文档：https://docs.scrapy.org/
-- scrapy-redis 项目：https://github.com/rmax/scrapy-redis
 - K8s `hostNetwork` 与 DaemonSet 最佳实践
 - 云厂商 EIP / 共享带宽包文档
 - 上层架构文档：《企业级内容生产系统群设计》

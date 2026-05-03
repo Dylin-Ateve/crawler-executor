@@ -644,6 +644,9 @@ class FetchQueueSpider(scrapy.Spider):
             "trace_id": response.meta.get("trace_id"),
             "host_id": response.meta.get("host_id"),
             "site_id": response.meta.get("site_id"),
+            "tier": response.meta.get("tier"),
+            "politeness_key": response.meta.get("politeness_key"),
+            "policy_scope_id": response.meta.get("policy_scope_id"),
             "stream_message_id": response.meta.get("stream_message_id"),
             "fetch_queue_consumer": response.meta.get("fetch_queue_consumer"),
         }
@@ -721,6 +724,9 @@ class FetchQueueSpider(scrapy.Spider):
             "trace_id": request.meta.get("trace_id"),
             "host_id": request.meta.get("host_id"),
             "site_id": request.meta.get("site_id"),
+            "tier": request.meta.get("tier"),
+            "politeness_key": request.meta.get("politeness_key"),
+            "policy_scope_id": request.meta.get("policy_scope_id"),
             "stream_message_id": request.meta.get("stream_message_id"),
             "fetch_queue_consumer": request.meta.get("fetch_queue_consumer"),
         }

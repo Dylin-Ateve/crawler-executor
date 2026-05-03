@@ -11,7 +11,7 @@
 ## 技术上下文
 
 **语言/版本**：[例如 Python 3.12 或 NEEDS CLARIFICATION]
-**主要依赖**：[例如 Scrapy、scrapy-redis、Kafka client]
+**主要依赖**：[例如 Scrapy、Redis client、Kafka client]
 **存储**：[例如对象存储、PostgreSQL、ClickHouse]
 **测试**：[例如 pytest、集成测试、压测]
 **目标平台**：[例如 Kubernetes Linux 节点]

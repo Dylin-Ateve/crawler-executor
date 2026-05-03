@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "scrapy-distributed-crawler-p0"
+name = "crawler-executor"
 version = "0.1.0"
-description = "P0 PoC for Scrapy based multi-egress-IP crawler"
+description = "Crawler executor for fetch commands, object snapshots, and crawl attempt events"
 requires-python = ">=3.9"
 dependencies = [
     "Scrapy>=2.11",

@@ -17,6 +17,9 @@ crawler-executor 是企业级内容生产系统群中的 **第二类：抓取执
 7. `specs/001-scrapy-distributed-crawler/`：P0 单节点 Scrapy 多出口 IP PoC。
 8. `specs/002-p1-content-persistence/`：P1 内容可靠持久化与 `crawl_attempt` producer。
 9. `specs/003-p2-readonly-scheduler-queue/`：P2 第六类队列只读消费与多 worker 运行形态。
+10. `specs/004-p3-k8s-daemonset-hostnetwork/`：P3 K8s DaemonSet + hostNetwork 部署基础。
+11. `specs/005-m3a-adaptive-politeness-egress-concurrency/`：M3a 自适应 Politeness 与出口并发控制。
+12. `specs/006-policy-scope-and-document-alignment/`：M4 前置策略作用域与文档 / 命名校准。
 
 ## 文档分层
 
@@ -50,4 +53,4 @@ crawler-executor 是企业级内容生产系统群中的 **第二类：抓取执
 
 ## 当前状态
 
-P0 单节点 Scrapy 多出口 IP PoC 已验证。P1 `crawl_attempt` producer 已通过目标节点 T055 验证。P2 / 003 正在规划第六类队列只读消费与多 worker 运行形态。
+P0 / P1 / P2 已完成目标节点验证；004 与 005 已完成 staging 等价镜像环境验证。006 已完成 M4 前置概念校准：控制平面策略作用域改为中性执行上下文，Redis 下发形态以 Redis / Valkey Streams consumer group 为准，外置 scheduler 不作为运行时目标。

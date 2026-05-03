@@ -51,6 +51,7 @@ def test_fetch_command_maps_context_to_request_meta():
             "site_id": "site-1",
             "tier": "hot",
             "politeness_key": "example.com",
+            "policy_scope_id": "scope-1",
         },
         stream_id="1-0",
         deliveries=2,
@@ -65,6 +66,7 @@ def test_fetch_command_maps_context_to_request_meta():
     assert meta["site_id"] == "site-1"
     assert meta["tier"] == "hot"
     assert meta["politeness_key"] == "example.com"
+    assert meta["policy_scope_id"] == "scope-1"
     assert meta["attempt_id"] == command.attempt_id
     assert meta["canonical_url"] == "https://example.com"
     assert meta["url_hash"] == command.url_hash

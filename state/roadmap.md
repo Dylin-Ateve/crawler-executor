@@ -46,12 +46,13 @@
 - **对应 spec**：`specs/005-m3a-adaptive-politeness-egress-concurrency/`
 - **验收信号**：同一 host 可在 K 个出口身份间受控轮转；429 / CAPTCHA / challenge / 反爬 200 页能按 `(host, ip)`、`ip`、`host` 维度触发不同退避；本地 delayed buffer 有容量和时间上限，buffer 满时停止 `XREADGROUP`；不会写 URL 队列、优先级或长期画像事实。本地脚本与 staging 真实多出口 IP smoke 已覆盖上述核心口径。
 
-### M4：控制平面策略运行时覆盖
+### M4：控制平面执行策略热加载与停抓控制
 
-- **目标**：Politeness、Tier、Site、HostGroup、紧急停抓等策略从控制平面下发并覆盖本地默认值。
+- **目标**：按 `tier` / `site_id` / `host_id` / `politeness_key` / `policy_scope_id` 等执行策略作用域，从控制平面热加载 politeness、pause、出口策略和运行参数，覆盖本地默认值。
 - **状态**：未开始。
 - **对应 spec**：待新建。
-- **验收信号**：策略变更不需要重启 worker；停抓指令能在约定时间内生效；审计事件回流第五类。
+- **前置校准**：`specs/006-policy-scope-and-document-alignment/` 已通过 ADR-0014 移除旧 Heritrix 分组概念和外置 scheduler 旧目标，并补齐 `crawl_attempt` 执行上下文透传。
+- **验收信号**：策略变更不需要重启 worker；全局 / 作用域停抓指令能在约定时间内生效；策略源异常时保留 last-known-good 并暴露指标；审计事件或可观测信号可被第五类 / 控制平面消费；不得引入 URL 调度、策略分组成员管理或外置 scheduler 语义。
 
 ### M5：JS 渲染与现代反爬补齐
 

@@ -6,6 +6,14 @@
 
 ## 2026-05-03
 
+### M4 前置 / 006：策略作用域与文档命名校准
+
+- **关联 spec**：`specs/006-policy-scope-and-document-alignment/`
+- **关联 ADR**：ADR-0014。
+- **新增决策**：crawler-executor 不把 `HostGroup` 作为一等概念；M4 策略作用域统一为 `tier` / `site_id` / `host_id` / `politeness_key` / `policy_scope_id`；`scrapy-redis` 不作为运行时依赖、终态下发形态或后续目标。
+- **文档收口**：北极星层、roadmap 和现状层已对齐 Redis / Valkey Streams consumer group、控制平面策略作用域和 004 / 005 已完成的 staging 现状。
+- **代码收口**：移除当前主路径历史 `page_metadata` publisher 入口、未使用 `KAFKA_TOPIC_PAGE_METADATA` 和 P0 包名；`crawl_attempt` payload / schema 增加 Fetch Command 执行上下文字段。
+
 ### P3 / 004：staging 验证通过并可关闭
 
 - **关联 spec**：`specs/004-p3-k8s-daemonset-hostnetwork/`

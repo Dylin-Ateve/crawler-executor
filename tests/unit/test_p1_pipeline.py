@@ -73,6 +73,14 @@ def test_crawl_attempt_schema_validation_accepts_valid_payload():
             "status_code": 200,
             "content_type": "text/html",
             "response_headers": {"Content-Type": "text/html", "X-Ignored": "1"},
+            "command_id": "cmd-1",
+            "trace_id": "trace-1",
+            "job_id": "job-1",
+            "host_id": "host-1",
+            "site_id": "site-1",
+            "tier": "tier-1",
+            "politeness_key": "polite-1",
+            "policy_scope_id": "scope-1",
         },
         canonical_url="https://example.com",
         url_hash="b" * 64,
@@ -98,6 +106,14 @@ def test_crawl_attempt_schema_validation_accepts_valid_payload():
     assert payload["attempt_id"] == "b" * 64 + ":attempt:1777334400000"
     assert payload["storage_result"] == "stored"
     assert payload["response_headers"] == {"content-type": "text/html"}
+    assert payload["command_id"] == "cmd-1"
+    assert payload["trace_id"] == "trace-1"
+    assert payload["job_id"] == "job-1"
+    assert payload["host_id"] == "host-1"
+    assert payload["site_id"] == "site-1"
+    assert payload["tier"] == "tier-1"
+    assert payload["politeness_key"] == "polite-1"
+    assert payload["policy_scope_id"] == "scope-1"
 
 
 def test_crawl_attempt_schema_rejects_missing_required_field():
@@ -109,7 +125,7 @@ def test_crawl_attempt_schema_rejects_missing_required_field():
         raise AssertionError("expected schema validation failure")
 
 
-def test_pipeline_persists_html_then_publishes_metadata():
+def test_pipeline_persists_html_then_publishes_attempt():
     storage = FakeObjectStorageClient(bucket="clawer_content_staging")
     publisher = FakeCrawlAttemptPublisher()
     pipeline = ContentPersistencePipeline(storage, publisher)

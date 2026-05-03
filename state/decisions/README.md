@@ -65,6 +65,7 @@
 | [0011](0011-k8s-rollout-uses-pel-recovery-shutdown-posture.md) | K8s 低频滚动采用 PEL 可恢复的关停姿态 | 被 0013 替代 | 2026-04-30 |
 | [0012](0012-adaptive-politeness-and-egress-concurrency.md) | 自适应 Politeness 与出口并发控制边界 | 已接受 | 2026-04-30 |
 | [0013](0013-k8s-daemonset-uses-rolling-update.md) | K8s DaemonSet 使用 RollingUpdate | 已接受 | 2026-05-01 |
+| [0014](0014-control-plane-policy-scope-and-streams-boundary.md) | 控制平面策略作用域与 Redis Streams 边界 | 已接受 | 2026-05-03 |
 
 ## 待回补 ADR 候选
 
