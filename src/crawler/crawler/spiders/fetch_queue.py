@@ -193,7 +193,7 @@ class FetchQueueSpider(scrapy.Spider):
         self._shutdown_summary_logged = True
 
     async def start(self):
-        self.consumer.ensure_group()
+        await asyncio.to_thread(self.consumer.ensure_group)
         self._record_consumer_heartbeat()
         mark_worker_initialized()
         max_messages = self.max_messages or self.default_max_messages
@@ -229,7 +229,7 @@ class FetchQueueSpider(scrapy.Spider):
                 self._record_delayed_buffer_metrics()
                 await asyncio.sleep(self.local_delayed_buffer_poll_seconds)
                 continue
-            entries = self.consumer.read()
+            entries = await asyncio.to_thread(self.consumer.read)
             if not entries:
                 if self.consumer.is_shutting_down:
                     return

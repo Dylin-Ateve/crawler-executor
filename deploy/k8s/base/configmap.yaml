@@ -15,7 +15,7 @@ data:
   fetch_queue_read_count: "10"
   fetch_queue_block_ms: "1000"
   fetch_queue_max_deliveries: "3"
-  fetch_queue_claim_min_idle_ms: "60000"
+  fetch_queue_claim_min_idle_ms: "600000"
   fetch_queue_shutdown_drain_seconds: "25"
   fetch_queue_max_messages: "0"
   concurrent_requests: "64"

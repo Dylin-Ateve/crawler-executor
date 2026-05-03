@@ -81,18 +81,24 @@
 
 ## 3. 关停参数关系
 
-M3 选择 ADR-0011 的 PEL 可恢复姿态，而不是严格 drain 完成后退出。
+M3 选择 ADR-0009 的 PEL 可恢复姿态，而不是严格 drain 完成后退出；rollout 策略按 ADR-0013 使用 `RollingUpdate maxUnavailable=1`。
 
 必须公式化：
 
 ```text
-FETCH_QUEUE_CLAIM_MIN_IDLE_MS >= terminationGracePeriodSeconds * 1000 + safety_margin_ms
+FETCH_QUEUE_CLAIM_MIN_IDLE_MS >= max(
+  terminationGracePeriodSeconds * 1000 + safety_margin_ms,
+  MAX_LOCAL_DELAY_SECONDS * 1000
+    + DOWNLOAD_TIMEOUT * (RETRY_TIMES + 1) * 1000
+    + KAFKA_DELIVERY_TIMEOUT_MS
+    + safety_margin_ms
+)
 ```
 
 原因：
 
 - 目标节点验证显示，若退出耗时超过 claim idle，退出中的 worker 可能自 reclaim 或重复处理同一 PEL。
-- claim idle 必须大于 kubelet 给 pod 的终止窗口，避免滚动期间过早接管。
+- claim idle 必须大于 kubelet 给 pod 的终止窗口，也必须覆盖 005 delayed buffer、下载重试与 Kafka delivery timeout 的主要处理窗口，避免 active worker 仍在处理时被其它 worker 过早接管。
 
 `FETCH_QUEUE_BLOCK_MS=1000` 是为了缩短空队列阻塞读对 SIGTERM 的响应延迟；代价是 Redis 轮询更频繁。
 

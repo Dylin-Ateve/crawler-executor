@@ -17,7 +17,7 @@ CONFIG_KEYS = [
     ("fetch_queue_read_count", "FETCH_QUEUE_READ_COUNT", "10"),
     ("fetch_queue_block_ms", "FETCH_QUEUE_BLOCK_MS", "1000"),
     ("fetch_queue_max_deliveries", "FETCH_QUEUE_MAX_DELIVERIES", "3"),
-    ("fetch_queue_claim_min_idle_ms", "FETCH_QUEUE_CLAIM_MIN_IDLE_MS", "60000"),
+    ("fetch_queue_claim_min_idle_ms", "FETCH_QUEUE_CLAIM_MIN_IDLE_MS", "600000"),
     ("fetch_queue_shutdown_drain_seconds", "FETCH_QUEUE_SHUTDOWN_DRAIN_SECONDS", "25"),
     ("fetch_queue_max_messages", "FETCH_QUEUE_MAX_MESSAGES", "0"),
     ("concurrent_requests", "CONCURRENT_REQUESTS", "64"),

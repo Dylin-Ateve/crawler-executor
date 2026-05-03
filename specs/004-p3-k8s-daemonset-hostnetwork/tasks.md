@@ -1,10 +1,10 @@
 # 任务：P3 K8s DaemonSet + hostNetwork 生产部署基础
 
 **输入**：`spec.md`、`plan.md`、`research.md`、`data-model.md`  
-**前置条件**：P2 Redis Streams 队列消费目标节点验证通过；ADR-0011 已接受；具备至少 1-2 台 crawler 测试 node。
-**当前状态**：已暂停。2026-04-30 目标集群资源准备过程中发现生产上线前仍有功能性遗漏，004 暂停在部署基础准备阶段；待后续新 spec 补齐功能缺口后恢复。
+**前置条件**：P2 Redis Streams 队列消费目标节点验证通过；ADR-0013 已接受；具备至少 1-2 台 crawler 测试 node。
+**当前状态**：已恢复，staging 验证中。2026-05-03 起，005 已完成本地实现与 staging OKE 等价镜像环境验证，004 从暂停现场恢复，进入剩余目标集群验证与关闭收口阶段。
 
-## 暂停现场
+## 暂停与恢复现场
 
 - OKE node pool：`scrapy-node-pool`。
 - subnet：`subnetCollection`。
@@ -12,12 +12,11 @@
 - node label：`scrapy-egress=true` 已确认存在。
 - taint：暂未配置，符合第一轮实测策略。
 - host interface：`enp0s5`。
-- 每 node IPv4 数量：约 65，生产 profile 按 `M3_IP_POOL_EXPECTED_RANGE=60-70` 验证。
-- Redis TCP：`aaajqtckmia7tfijfk75vfiz4rw4goapkg3geaw2tmaaog4ogcwh6ta-p.redis.us-phoenix-1.oci.oraclecloud.com:7379` 已连通；协议级 `PING` 待补。
+- staging 每 node IPv4 数量：5，按 `M3_IP_POOL_EXPECTED_RANGE=5-5` 验证；production profile 仍按 `60-70` 验证。
+- Redis / Kafka：staging 已验证 Kafka broker TCP 9092、容器 CA 路径和最小 producer smoke；Redis Stream PEL 已清空。
 - namespace：`crawler-executor`。
 - Secret：`crawler-executor-redis` 与 `crawler-executor-kafka` 已创建，预期 key 均存在。
-- Kafka：连通性暂认定可用，发布验证待补。
-- ConfigMap / DaemonSet：未 apply。
+- ConfigMap / DaemonSet：staging 已 apply 并通过 M3 K8s DaemonSet 审计。
 
 ## 阶段 1：规格与部署决策
 
@@ -27,13 +26,14 @@
 - [x] T004 确认健康检查口径：liveness 不包含 Kafka / Redis / OCI 短暂依赖故障。
 - [x] T005 确认 debug attempt 事件边界：正式 topic + `tier=debug`。
 - [x] T006 新增 ADR-0011，记录 K8s 低频滚动的 PEL 可恢复关停姿态。
+- [x] T006a 新增 ADR-0013，替代 ADR-0011 的 OnDelete 方案，确认 DaemonSet 使用 `RollingUpdate maxUnavailable=1`。
 
 ## 阶段 2：配置模型与运行参数
 
 - [x] T007 定义 K8s Secret 字段清单与引用名，禁止真实凭据入库。
 - [x] T008 定义 ConfigMap 字段清单：queue、consumer、并发、timeout、claim idle、drain、IP 排除列表、debug、pause。
 - [x] T009 实现或整理 `FETCH_QUEUE_CONSUMER` 模板：`${NODE_NAME}-${POD_NAME}`。
-- [x] T010 公式化 `FETCH_QUEUE_CLAIM_MIN_IDLE_MS >= terminationGracePeriodSeconds * 1000 + safety_margin_ms`，并在示例配置中体现。
+- [x] T010 公式化 `FETCH_QUEUE_CLAIM_MIN_IDLE_MS`，覆盖 K8s termination grace、005 delayed buffer、下载重试和 Kafka delivery timeout，并在示例配置中体现。
 - [x] T011 定义 M3 默认 `FETCH_QUEUE_BLOCK_MS=1000`，说明 SIGTERM 响应延迟与 Redis 轮询频率取舍。
 - [x] T012 定义 debug stream / group / consumer 命名规则。
 
@@ -74,20 +74,23 @@
 ## 阶段 7：目标集群验证
 
 - [x] T035a 记录目标集群第一轮资源现场：`scrapy-node-pool`、`subnetCollection`、`scrapy-egress=true`、`enp0s5`、每 node 约 65 个 IPv4、namespace 与 Redis/Kafka Secret。
-- [ ] T035b 恢复 004 前，完成新 spec 对生产功能性缺口的补齐与评审。
-- [ ] T035 在至少 1 个 crawler node 上部署 DaemonSet，验证 pod 使用 hostNetwork 并发现 IP 池（审计脚本已准备：`deploy/scripts/run-m3-k8s-daemonset-audit.sh`，需目标集群执行）。
-- [ ] T036 在至少 2 个 crawler node 上部署 DaemonSet，验证每 node 一个 pod（审计脚本已准备：`deploy/scripts/run-m3-k8s-daemonset-audit.sh`，需目标集群执行）。
-- [ ] T037 向生产测试 stream 写入 Fetch Command，验证多个 pod 常驻消费并发布 `crawl_attempt` 后 `XACK`。
+- [x] T035b 恢复 004 前，完成新 spec 对生产功能性缺口的补齐与评审：005 已完成本地实现与 staging OKE 等价镜像环境验证。
+- [x] T035 在至少 1 个 crawler node 上部署 DaemonSet，验证 pod 使用 hostNetwork 并发现 IP 池：staging 审计通过，`enp0s5` 发现 5 个 IPv4。
+- [x] T036 在至少 2 个 crawler node 上部署 DaemonSet，验证每 node 一个 pod：staging 审计通过，2 个 `scrapy-egress=true` node 各 1 个 Running pod。
+- [ ] T037 向生产测试 stream 写入 Fetch Command，验证多个 pod 常驻消费并发布 `crawl_attempt` 后 `XACK`；需在 Kafka/CA 修复后重新执行干净 smoke，并记录 PEL 回到 0。
+- [x] T037a 修复 staging T037 暴露的 reactor 阻塞风险：`FetchQueueSpider.start()` 不再在 async loop 中同步执行 Redis `ensure_group` / `XREADGROUP`，改为线程 offload；本地相关单元测试通过。
+- [ ] T037b 使用包含 T037a 修复的新镜像重新执行 staging T037，确认 response/errback、`crawl_attempt` 发布和 PEL 清空。
 - [ ] T038 手动删除单个 pod，验证未完成消息留 PEL 且后续可 reclaim；允许少量重复抓取。
-- [ ] T039 验证 Kafka / Redis / OCI 短暂依赖异常进入指标和告警，而不触发 liveness 雪崩。
+- [ ] T039 验证 Kafka / Redis / OCI 短暂依赖异常进入指标和告警，而不触发 liveness 雪崩；Kafka failure 指标已观察，仍需补 Redis / OCI 或形成明确例外记录。
 - [ ] T040 验证指定 node 的 debug stream 路由与 `tier=debug` 事件边界。
 - [ ] T041 验证 pause flag 能停止读取新消息并可恢复（目标集群传播验证脚本已准备：`deploy/scripts/run-m3-k8s-pause-flag-validation.sh`）。
+- [ ] T041a 补 Object Storage 内容写入权限验证；204 smoke 不能替代 HTML 内容持久化验证。
 
 ## 阶段 8：文档收口
 
 - [ ] T042 更新 `quickstart.md` 的目标集群部署和验证记录。
 - [ ] T043 更新 `state/current.md`、`state/roadmap.md`、`state/changelog.md`。
-- [ ] T044 若 M3 实现发现需要改变 ADR-0011 或 ADR-0009，先新增 / 修订 ADR，再更新 plan。
+- [x] T044 若 M3 实现发现需要改变 ADR-0011 或 ADR-0009，先新增 / 修订 ADR，再更新 plan：ADR-0013 已接受并替代 ADR-0011 的默认 rollout 策略。
 
 ## 依赖与执行顺序
 

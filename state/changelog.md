@@ -6,6 +6,14 @@
 
 ## 2026-05-03
 
+### P3 / 004：恢复 staging 验证与关闭收口
+
+- **关联 spec**：`specs/004-p3-k8s-daemonset-hostnetwork/`
+- **恢复结论**：005 已补齐 004 暂停时发现的生产功能性缺口，004 从“已暂停”恢复为 staging 验证中。
+- **已复用证据**：staging OKE 已验证 DaemonSet `hostNetwork=true`、`ClusterFirstWithHostNet`、`RollingUpdate maxUnavailable=1`、2 node / 2 pod、`enp0s5` IP 池 `5-5`、health/readiness、Kafka producer smoke 和 Redis PEL 清空。
+- **验证中发现并修复**：T037 staging smoke 暴露 `FETCH_QUEUE_CLAIM_MIN_IDLE_MS=60000` 会在 005 delayed buffer / 下载 / Kafka 发布窗口内过早 `XAUTOCLAIM` active PEL，已将 production / staging 默认值提升为 `600000ms`；同时修复 `FetchQueueSpider.start()` 在 async loop 中同步执行 Redis 阻塞读导致 Scrapy downloader 被饿住的问题，改为线程 offload。
+- **关闭前剩余项**：仍需补干净 Fetch Command 消费后 `crawl_attempt` 发布并 `XACK`、Object Storage 内容持久化、debug stream 定向路由、pause flag、手动删除 / RollingUpdate 下 PEL reclaim，以及依赖异常不触发 liveness 雪崩的明确记录。
+
 ### M3a / 005：staging 等价镜像环境验证通过
 
 - **关联 spec**：`specs/005-m3a-adaptive-politeness-egress-concurrency/`
@@ -56,7 +64,7 @@
 - **关键决策**：关停语义选择 B（低频手动滚动、任务幂等、允许少量重复抓取、未完成 in-flight 留 PEL 后续 reclaim）；liveness 只检查进程 / reactor / metrics endpoint 基本存活，外部依赖短暂故障进入指标和告警；debug stream 的 `crawl_attempt` 仍进入正式 topic，但必须携带 `tier=debug` 供第五类过滤或标记。
 - **目标集群现场**：已确认 OKE node pool `scrapy-node-pool`、subnet `subnetCollection`、2 个 node 均带 `scrapy-egress=true`；host interface 为 `enp0s5`，每 node 约 65 个 IPv4；Redis endpoint `aaajqtckmia7tfijfk75vfiz4rw4goapkg3geaw2tmaaog4ogcwh6ta-p.redis.us-phoenix-1.oci.oraclecloud.com:7379` TCP 连通；namespace `crawler-executor` 已创建；`crawler-executor-redis` 和 `crawler-executor-kafka` Secret key 均存在。
 - **暂停原因**：生产部署前发现功能性遗漏。团队决定暂停 004，不继续 apply ConfigMap / DaemonSet，也不进入生产流量验证；后续先制定新 spec 补齐功能缺口。
-- **当前状态**：已暂停。ConfigMap、DaemonSet、Redis PING、Kafka publish smoke、Object Storage 权限、常驻消费、debug、pause 和 PEL reclaim 目标集群验证均待恢复后执行。
+- **当时状态**：004 在 2026-04-30 暂停。该状态已于 2026-05-03 被上方“恢复 staging 验证与关闭收口”记录替代；剩余验证项继续按 004 tasks 跟进。
 
 ### P2 / 003：优雅停机与 PEL 移交语义落地（T015c 收尾）
 

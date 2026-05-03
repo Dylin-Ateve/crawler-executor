@@ -43,10 +43,14 @@ require(prod.get("IP_SELECTION_STRATEGY") == "STICKY_POOL", "production IP_SELEC
 require(prod.get("STOP_READING_WHEN_DELAYED_BUFFER_FULL") == "true", "production delayed-buffer backpressure must be enabled")
 require(int(prod.get("LOCAL_DELAYED_BUFFER_CAPACITY", "0")) > 0, "production LOCAL_DELAYED_BUFFER_CAPACITY must be positive")
 require(int(prod.get("MAX_LOCAL_DELAY_SECONDS", "0")) > 0, "production MAX_LOCAL_DELAY_SECONDS must be positive")
+require(int(prod.get("FETCH_QUEUE_CLAIM_MIN_IDLE_MS", "0")) >= 600000,
+        "production FETCH_QUEUE_CLAIM_MIN_IDLE_MS must cover delayed buffer and publish window")
 require(prod.get("EXECUTION_STATE_WRITE_ENABLED") == "true", "production execution-state writes must be enabled")
 require(stage.get("EGRESS_SELECTION_STRATEGY") == "STICKY_POOL", "staging EGRESS_SELECTION_STRATEGY must mirror production")
 require(stage.get("IP_SELECTION_STRATEGY") == "STICKY_POOL", "staging IP_SELECTION_STRATEGY must mirror production")
 require(stage.get("EXECUTION_STATE_WRITE_ENABLED") == "true", "staging execution-state writes must be enabled for mirrored validation")
+require(int(stage.get("FETCH_QUEUE_CLAIM_MIN_IDLE_MS", "0")) == int(prod.get("FETCH_QUEUE_CLAIM_MIN_IDLE_MS", "0")),
+        "staging FETCH_QUEUE_CLAIM_MIN_IDLE_MS should mirror production")
 require(stage.get("M3_K8S_NAMESPACE") == prod.get("M3_K8S_NAMESPACE"), "staging namespace should match production in isolated cluster")
 require(stage.get("M3_NODE_SELECTOR_KEY") == prod.get("M3_NODE_SELECTOR_KEY"), "staging node selector key should match production")
 require(stage.get("M3_NODE_LABEL") == prod.get("M3_NODE_LABEL"), "staging node label should match production")

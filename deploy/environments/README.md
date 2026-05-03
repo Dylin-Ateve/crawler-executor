@@ -14,6 +14,7 @@
 - 预期每 node IPv4 数量：`60-70`
 - M3a 策略：`EGRESS_SELECTION_STRATEGY=STICKY_POOL`
 - 历史兼容字段 `IP_SELECTION_STRATEGY` 同步设为 `STICKY_POOL`
+- `FETCH_QUEUE_CLAIM_MIN_IDLE_MS=600000`，覆盖 delayed buffer、下载重试和 Kafka delivery timeout 的主要处理窗口，避免 active PEL 被过早接管
 
 ## staging.env
 
@@ -26,6 +27,7 @@
 - 预期每 node IPv4 数量：`5`（当前 staging 为 1 个 primary + 4 个 secondary；当前 IP 池发现逻辑默认计入 primary）
 - M3a 策略：`EGRESS_SELECTION_STRATEGY=STICKY_POOL`
 - Redis 执行态写入启用，但 prefix 隔离为 `crawler:exec:safety:staging`
+- `FETCH_QUEUE_CLAIM_MIN_IDLE_MS=600000`，与 production 保持同一可靠性口径
 
 ## 凭据边界
 

@@ -1,23 +1,23 @@
-# M3 K8s base manifests
+# M3 K8s 基础 manifest
 
-This directory contains first-pass Kubernetes templates for `crawler-executor`.
+本目录保存 `crawler-executor` 的 M3 Kubernetes 基础模板。
 
-Do not commit real Secret values. `secrets.example.yaml` documents required Secret names and keys only; create real Secrets in the target cluster through the approved secret-management path.
+不要提交真实 Secret 值。`secrets.example.yaml` 只说明必需的 Secret 名称和 key；真实 Secret 必须通过目标集群认可的密钥管理路径创建。
 
-Environment profiles live under `deploy/environments/`. Use `production.env` for the current OCI / OKE production candidate and `staging.env` for the earlier `ens3` staging defaults.
+环境 profile 位于 `deploy/environments/`。`production.env` 用于当前 OCI / OKE production 候选环境；`staging.env` 是 production 功能验证的等价镜像环境，只允许资源定位、规模和物理拓扑不同。当前 staging 同样使用 `CRAWL_INTERFACE=enp0s5`，IP 池验证范围为 `5-5`。
 
-The DaemonSet uses conservative initial resources:
+DaemonSet 使用保守的初始资源配置：
 
 - requests: `cpu=1000m`, `memory=2Gi`
 - limits: `cpu=4000m`, `memory=6Gi`
 
-Tune these with `CONCURRENT_REQUESTS = min(ip_count * per_ip_concurrency, global_cap)`. Increasing the 50-60 IP pool utilization requires revisiting CPU, memory, Kafka flush latency, object storage upload latency, and gzip compression overhead.
+资源调优需结合 `CONCURRENT_REQUESTS = min(ip_count * per_ip_concurrency, global_cap)`。production 计划使用 `60-70` 个本地 IPv4 时，必须重新评估 CPU、内存、Kafka flush 延迟、对象存储上传延迟和 gzip 压缩开销；staging 当前以每 node 5 个 IPv4 复刻功能行为。
 
-Prometheus discovery is provided through pod annotations on `:9410/metrics`. Clusters that require `ServiceMonitor` or `PodMonitor` can translate those annotations into their monitoring stack without changing the application container contract.
+Prometheus 发现通过 pod annotations 暴露 `:9410/metrics`。如果集群要求 `ServiceMonitor` 或 `PodMonitor`，可以在监控栈侧转换这些 annotations，不改变应用容器契约。
 
-The pause flag is exposed both as `CRAWLER_PAUSED` at startup and as a ConfigMap volume file mounted at `/etc/crawler/runtime/crawler_paused`. Patch `crawler-executor-config.data.crawler_paused` to pause or resume existing pods without deleting the DaemonSet; allow for normal kubelet ConfigMap volume propagation delay.
+pause flag 同时以启动时环境变量 `CRAWLER_PAUSED` 和 ConfigMap volume 文件 `/etc/crawler/runtime/crawler_paused` 暴露。通过 patch `crawler-executor-config.data.crawler_paused` 可以在不删除 DaemonSet 的情况下暂停或恢复已有 pod；需要给 kubelet ConfigMap volume 正常传播延迟留出时间。
 
-Apply order for a test namespace:
+测试 namespace 的 apply 顺序：
 
 ```bash
 kubectl apply -f configmap.yaml

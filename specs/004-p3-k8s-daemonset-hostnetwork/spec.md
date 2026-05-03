@@ -2,15 +2,15 @@
 
 **功能分支**：`004-p3-k8s-daemonset-hostnetwork`  
 **创建日期**：2026-04-30  
-**状态**：已暂停
-**输入来源**：`.specify/memory/product.md`、`.specify/memory/architecture.md`、`state/current.md`、`state/roadmap.md`、`state/decisions/0003-redis-write-side-belongs-to-scheduler.md`、`state/decisions/0004-use-redis-streams-consumer-group-for-fetch-queue.md`、`state/decisions/0006-ack-fetch-command-after-crawl-attempt-published.md`、`state/decisions/0008-kafka-publish-failure-not-in-max-deliveries-terminal-semantics.md`、`state/decisions/0009-graceful-shutdown-and-pel-handover.md`、`state/decisions/0010-system-group-class-2-positioning.md`、`state/decisions/0011-k8s-rollout-uses-pel-recovery-shutdown-posture.md`
+**状态**：已恢复，staging 验证中
+**输入来源**：`.specify/memory/product.md`、`.specify/memory/architecture.md`、`state/current.md`、`state/roadmap.md`、`state/decisions/0003-redis-write-side-belongs-to-scheduler.md`、`state/decisions/0004-use-redis-streams-consumer-group-for-fetch-queue.md`、`state/decisions/0006-ack-fetch-command-after-crawl-attempt-published.md`、`state/decisions/0008-kafka-publish-failure-not-in-max-deliveries-terminal-semantics.md`、`state/decisions/0009-graceful-shutdown-and-pel-handover.md`、`state/decisions/0010-system-group-class-2-positioning.md`、`state/decisions/0013-k8s-daemonset-uses-rolling-update.md`
 
 ## 定位与边界检查
 
 - **Roadmap 位置**：M3：生产部署基础。
 - **产品门禁**：仍服务第二类抓取执行系统，不引入 URL 选择、优先级决策、解析派发、事实层投影或内容质量判断。
 - **架构边界**：本 spec 只定义 crawler-executor 在 K8s 内常驻运行、节点级网络访问、配置注入、健康检查和调试路由；不改变第六类队列写入侧与第五类事实层职责。
-- **相关 ADR**：ADR-0003、ADR-0004、ADR-0006、ADR-0008、ADR-0009、ADR-0010、ADR-0011。
+- **相关 ADR**：ADR-0003、ADR-0004、ADR-0006、ADR-0008、ADR-0009、ADR-0010、ADR-0013。ADR-0011 已被 ADR-0013 替代，只保留历史背景价值。
 
 ## 背景
 
@@ -20,13 +20,17 @@ M3 的目标是把 crawler-executor 推进到 K8s 集群中的节点级常驻部
 
 本 spec 不追求一次性完成大规模生产调优。M3 只收口部署基础、运行参数注入、健康探针、指标暴露、节点隔离、调试路由与滚动更新约束。
 
-## 暂停记录
+## 暂停与恢复记录
 
 **暂停日期**：2026-04-30
 
 **暂停原因**：目标集群资源准备过程中发现生产上线前仍存在功能性遗漏。继续推进 004 会把部署问题、环境问题和功能缺口混在同一条验证链路里，不利于定位和回滚。因此 004 暂停在“部署基础准备 / 目标集群现场记录”阶段，等待后续新 spec 明确并补齐功能缺口后再恢复。
 
-**已完成现场**：
+**恢复日期**：2026-05-03
+
+**恢复原因**：005 已完成本地实现与 staging OKE 等价镜像环境验证，补齐 004 暂停时识别出的自适应 politeness、sticky-pool、per-(host, egress identity) pacer、soft-ban feedback、本地有界延迟、Redis TTL 执行态边界与相关指标缺口。004 重新进入 staging 验证与关闭收口阶段。
+
+**当前 staging 现场**：
 
 - OKE node pool 已创建并用于第一轮实测：`scrapy-node-pool`。
 - node pool subnet：`subnetCollection`。
@@ -34,32 +38,30 @@ M3 的目标是把 crawler-executor 推进到 K8s 集群中的节点级常驻部
 - crawler 调度 label：`scrapy-egress=true`，两个 node 均已确认存在。
 - taint：暂未配置，符合 004 第一轮实测策略。
 - host interface：`enp0s5`。
-- 每个 node 的 `enp0s5` IPv4 数量：约 65，后续生产 profile 按 `M3_IP_POOL_EXPECTED_RANGE=60-70` 验证。
-- Redis endpoint TCP 连通已确认：`aaajqtckmia7tfijfk75vfiz4rw4goapkg3geaw2tmaaog4ogcwh6ta-p.redis.us-phoenix-1.oci.oraclecloud.com:7379`；Redis 协议级 `PING` 待恢复后补做。
+- staging 每个 node 的 `enp0s5` IPv4 数量：5，按 `M3_IP_POOL_EXPECTED_RANGE=5-5` 验证；production profile 仍按 `60-70` 验证。
+- Kafka broker TCP 9092 已在 staging 从所有 crawler node IP 连通；容器 CA 路径使用 `/etc/ssl/certs/ca-certificates.crt`。
 - K8s namespace：`crawler-executor`。
 - K8s Secret 已创建且 key 存在：
   - `crawler-executor-redis`：`fetch_queue_redis_url`、`redis_url`。
   - `crawler-executor-kafka`：`username`、`password`。
-- Kafka 连通性当前由团队暂认定可用；生产发布验证待恢复后补做。
 - 已新增生产 / staging 环境 profile：
   - `deploy/environments/production.env`：记录当前 OCI / OKE 生产候选参数。
-  - `deploy/environments/staging.env`：保留早期 staging / `ens3` 默认。
+  - `deploy/environments/staging.env`：复刻 production 功能口径，仅保留 staging 资源规模、端点、凭据和存储 bucket 等物理差异。
 
-**未继续推进**：
+**已由 005/staging 验证覆盖的 004 基础项**：
 
-- 未将真实 ConfigMap apply 到目标集群。
-- 未部署 DaemonSet。
-- 未执行 `run-m3-k8s-daemonset-audit.sh`。
-- 未验证 pod 内 hostNetwork IP 池发现。
-- 未验证多 pod 常驻消费、`crawl_attempt` 发布后 `XACK`、debug stream、pause flag、手动删除 pod 后 PEL reclaim。
+- ConfigMap / DaemonSet 已在 staging apply 并完成 server dry-run。
+- `run-m3-k8s-daemonset-audit.sh` 通过：`hostNetwork=true`、`ClusterFirstWithHostNet`、`RollingUpdate maxUnavailable=1`、每 node 单 Pod、health/readiness 与 IP 池发现均通过。
+- staging 最小 Kafka producer smoke 通过，Redis Streams PEL 已清空。
 
-**恢复条件**：
+**004 关闭前仍需补齐的验证**：
 
-1. 新 spec 明确并补齐生产上线前发现的功能性缺口。
-2. 确认补齐内容不会改变 004 的核心部署假设；如改变，需要先更新 ADR / 004 规格。
-3. Redis 协议级 `PING`、Kafka 发布 smoke、Object Storage 写入权限在目标集群或等价环境中通过。
-4. ConfigMap 真实非敏感参数完成审核，Secret 仍不得进入仓库或 ConfigMap。
-5. 恢复后从 `quickstart.md` 的目标集群验证步骤继续，而不是直接上生产流量。
+1. 以干净测试消息重新验证 DaemonSet 常驻消费、发布 `crawl_attempt` 后 `XACK`，并确保 PEL 回到 0。
+2. 补 Object Storage 内容写入权限验证；204 smoke 只能验证抓取/Kafka，不能证明内容持久化。
+3. 验证 debug stream 定向路由与 `tier=debug` 事件边界。
+4. 验证 pause flag 在 K8s ConfigMap volume 下的传播、停读与恢复。
+5. 验证手动删除 / RollingUpdate 期间未完成消息留 PEL 并可由后续 worker reclaim。
+6. 记录依赖异常进入指标而不触发 liveness 雪崩的 staging 证据。
 
 ## 已确认决策
 
@@ -172,8 +174,8 @@ M3 的目标是把 crawler-executor 推进到 K8s 集群中的节点级常驻部
 - **FR-009**：IP 池第一版由 pod 启动时扫描宿主机可用 IPv4 得到，并通过 `EXCLUDED_LOCAL_IPS` 过滤；运行期 NIC 变化通过重启 pod 生效。
 - **FR-009a**：M3 生产第一版默认 `CRAWL_INTERFACE=enp0s5`；`all` / `*` 可作为显式全接口诊断能力，`LOCAL_IP_POOL` 只作为 debug override。
 - **FR-010**：M3 必须支持 50-70 个本地出口 IPv4 的 node 规模假设，且不得把 P0 的 44 IP 数量作为上限。
-- **FR-011**：`FETCH_QUEUE_CLAIM_MIN_IDLE_MS` 必须由公式推导，最小值不低于 `terminationGracePeriodSeconds * 1000 + safety_margin_ms`。
-  M3 第一版建议 `terminationGracePeriodSeconds=30`、`safety_margin_ms=30000`、`FETCH_QUEUE_CLAIM_MIN_IDLE_MS=60000`。
+- **FR-011**：`FETCH_QUEUE_CLAIM_MIN_IDLE_MS` 必须由公式推导，最小值不低于 `max(terminationGracePeriodSeconds * 1000 + safety_margin_ms, MAX_LOCAL_DELAY_SECONDS * 1000 + DOWNLOAD_TIMEOUT * (RETRY_TIMES + 1) * 1000 + KAFKA_DELIVERY_TIMEOUT_MS + safety_margin_ms)`。
+  M3 第一版建议 `terminationGracePeriodSeconds=30`、`MAX_LOCAL_DELAY_SECONDS=300`、`DOWNLOAD_TIMEOUT=30`、`RETRY_TIMES=2`、`KAFKA_DELIVERY_TIMEOUT_MS=120000`、`safety_margin_ms=90000`、`FETCH_QUEUE_CLAIM_MIN_IDLE_MS=600000`。
 - **FR-012**：M3 采用关停语义 B：低频手动滚动、任务幂等、允许少量重复抓取；未完成 in-flight 在退出后留 PEL 并由后续 `XAUTOCLAIM` 接管。
 - **FR-013**：`FETCH_QUEUE_BLOCK_MS` 第一版建议为 `1000`，作为 SIGTERM 响应延迟与 Redis 轮询频率之间的取舍。
 - **FR-014**：liveness 不得把 Kafka / Redis / OCI 短暂不可达作为失败条件；liveness 仅检查进程 / reactor / metrics endpoint 基本存活。

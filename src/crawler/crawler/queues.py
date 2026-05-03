@@ -117,7 +117,7 @@ class RedisStreamsFetchConsumer:
         read_count: int = 10,
         block_ms: int = 5000,
         max_deliveries: int = 3,
-        claim_min_idle_ms: int = 60000,
+        claim_min_idle_ms: int = 600000,
     ) -> None:
         self.redis_client = redis_client
         self.stream = stream
@@ -149,7 +149,7 @@ class RedisStreamsFetchConsumer:
             read_count=settings.getint("FETCH_QUEUE_READ_COUNT", 10),
             block_ms=settings.getint("FETCH_QUEUE_BLOCK_MS", 5000),
             max_deliveries=settings.getint("FETCH_QUEUE_MAX_DELIVERIES", 3),
-            claim_min_idle_ms=settings.getint("FETCH_QUEUE_CLAIM_MIN_IDLE_MS", 60000),
+            claim_min_idle_ms=settings.getint("FETCH_QUEUE_CLAIM_MIN_IDLE_MS", 600000),
         )
 
     @property

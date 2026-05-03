@@ -182,6 +182,36 @@ def test_start_loop_exits_when_consumer_in_shutdown_at_entry():
     assert requests == []
 
 
+def test_start_loop_offloads_blocking_redis_calls(monkeypatch):
+    spider = _build_spider()
+    calls = []
+
+    def fake_ensure_group():
+        calls.append("ensure_group")
+
+    def fake_read():
+        calls.append("read")
+        return []
+
+    async def fake_to_thread(func, *args, **kwargs):
+        calls.append(f"to_thread:{func.__name__}")
+        return func(*args, **kwargs)
+
+    spider.consumer.ensure_group = fake_ensure_group
+    spider.consumer.read = fake_read
+    spider.max_messages = 1
+
+    monkeypatch.setattr("crawler.spiders.fetch_queue.asyncio.to_thread", fake_to_thread)
+
+    async def collect():
+        return [request async for request in spider.start()]
+
+    requests = asyncio.run(collect())
+
+    assert requests == []
+    assert calls == ["to_thread:fake_ensure_group", "ensure_group", "to_thread:fake_read", "read"]
+
+
 def test_pause_file_overrides_env_pause_flag(tmp_path):
     spider = _build_spider()
     pause_file = tmp_path / "crawler_paused"

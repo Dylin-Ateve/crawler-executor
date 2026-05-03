@@ -19,8 +19,8 @@
 | `fetch_queue_read_count` | `FETCH_QUEUE_READ_COUNT` | `10` | 单次读取数量；后续可按节点并发调优。 |
 | `fetch_queue_block_ms` | `FETCH_QUEUE_BLOCK_MS` | `1000` | 阻塞读取时间；M3 选择较短 block 以降低 SIGTERM 响应延迟。 |
 | `fetch_queue_max_deliveries` | `FETCH_QUEUE_MAX_DELIVERIES` | `3` | 非 Kafka publish failure 的最大投递次数。 |
-| `fetch_queue_claim_min_idle_ms` | `FETCH_QUEUE_CLAIM_MIN_IDLE_MS` | `60000` | 必须满足 `terminationGracePeriodSeconds * 1000 + safety_margin_ms` 下限。 |
-| `fetch_queue_shutdown_drain_seconds` | `FETCH_QUEUE_SHUTDOWN_DRAIN_SECONDS` | `25` | ADR-0011 下作为退出总结窗口，不承诺强制终止 Scrapy in-flight。 |
+| `fetch_queue_claim_min_idle_ms` | `FETCH_QUEUE_CLAIM_MIN_IDLE_MS` | `600000` | 必须覆盖 K8s termination grace、005 delayed buffer、下载重试和 Kafka delivery timeout 的主要处理窗口。 |
+| `fetch_queue_shutdown_drain_seconds` | `FETCH_QUEUE_SHUTDOWN_DRAIN_SECONDS` | `25` | ADR-0009 / ADR-0013 口径下作为退出总结窗口，不承诺强制终止 Scrapy in-flight。 |
 | `fetch_queue_max_messages` | `FETCH_QUEUE_MAX_MESSAGES` | `0` | 常驻生产消费设为 `0`，表示不按消息数自动退出。 |
 
 `FETCH_QUEUE_CONSUMER` 不应作为静态 ConfigMap 值下发。应用优先使用显式 `FETCH_QUEUE_CONSUMER`，否则按 `FETCH_QUEUE_CONSUMER_TEMPLATE` 渲染；模板中的 `NODE_NAME` / `POD_NAME` 必须来自 Downward API，避免多个 pod 使用同一个 consumer name。
@@ -44,10 +44,16 @@ M3 第一版固定建议 `FETCH_QUEUE_BLOCK_MS=1000`。
 
 ## Reclaim idle 推导
 
-M3 采用 ADR-0011 的 PEL 可恢复关停姿态，`FETCH_QUEUE_CLAIM_MIN_IDLE_MS` 必须由 DaemonSet 的 `terminationGracePeriodSeconds` 推导，而不是拍固定值。
+M3 采用 ADR-0009 的 PEL 可恢复关停姿态，并按 ADR-0013 使用 `RollingUpdate maxUnavailable=1`；`FETCH_QUEUE_CLAIM_MIN_IDLE_MS` 必须由 DaemonSet 的 `terminationGracePeriodSeconds` 推导，而不是拍固定值。
 
 ```text
-FETCH_QUEUE_CLAIM_MIN_IDLE_MS >= terminationGracePeriodSeconds * 1000 + safety_margin_ms
+FETCH_QUEUE_CLAIM_MIN_IDLE_MS >= max(
+  terminationGracePeriodSeconds * 1000 + safety_margin_ms,
+  MAX_LOCAL_DELAY_SECONDS * 1000
+    + DOWNLOAD_TIMEOUT * (RETRY_TIMES + 1) * 1000
+    + KAFKA_DELIVERY_TIMEOUT_MS
+    + safety_margin_ms
+)
 ```
 
 第一版示例值：
@@ -55,19 +61,19 @@ FETCH_QUEUE_CLAIM_MIN_IDLE_MS >= terminationGracePeriodSeconds * 1000 + safety_m
 | 参数 | 示例值 | 说明 |
 |---|---:|---|
 | `terminationGracePeriodSeconds` | `30` | 低频手动滚动，保持 K8s 默认级别 grace。 |
-| `safety_margin_ms` | `30000` | 给 kubelet、网络抖动、日志 flush 和进程退出留 30 秒余量。 |
-| `FETCH_QUEUE_CLAIM_MIN_IDLE_MS` | `60000` | `30 * 1000 + 30000`。 |
+| `safety_margin_ms` | `90000` | 给 delayed buffer 边界、网络抖动、日志 flush、存储与进程退出留 90 秒余量。 |
+| `FETCH_QUEUE_CLAIM_MIN_IDLE_MS` | `600000` | 覆盖 `300s` delayed buffer、`30s * 3` 下载尝试、`120s` Kafka delivery timeout 和 `90s` 余量。 |
 
 约束：
 
-- 后续 DaemonSet 如果把 `terminationGracePeriodSeconds` 调高到 `N`，必须同步设置 `FETCH_QUEUE_CLAIM_MIN_IDLE_MS >= N * 1000 + 30000`。
+- 后续 DaemonSet 如果调高 `terminationGracePeriodSeconds`、`MAX_LOCAL_DELAY_SECONDS`、`DOWNLOAD_TIMEOUT`、`RETRY_TIMES` 或 `KAFKA_DELIVERY_TIMEOUT_MS`，必须同步重新推导 `FETCH_QUEUE_CLAIM_MIN_IDLE_MS`。
 - `FETCH_QUEUE_SHUTDOWN_DRAIN_SECONDS` 仍是退出总结窗口，不参与 reclaim idle 下限计算。
-- 该公式只保证滚动 / 删除 pod 的 grace 窗口内不会过早接管 PEL；M3 选择 B，长下载、对象存储上传或 Kafka flush 超过 reclaim idle 时仍可能产生少量重复抓取，依赖 `attempt_id` 幂等和下游去重承接。
-- 若未来要求严格无重复，必须重新修订 ADR-0011，并把 reclaim idle 进一步约束为覆盖下载、retry、存储、Kafka publish 和 ack 的最大处理时长。
+- 该公式保证滚动 / 删除 pod 的 grace 窗口内不会过早接管 PEL，也覆盖 005 本地 delayed buffer 和常规下载 / Kafka 发布窗口；M3 选择 B，长尾处理超过 reclaim idle 时仍可能产生少量重复抓取，依赖 `attempt_id` 幂等和下游去重承接。
+- 若未来要求严格无重复，必须重新修订 ADR-0009 / ADR-0013，并把 reclaim idle 进一步约束为覆盖下载、retry、存储、Kafka publish 和 ack 的最大处理时长。
 
 ## Scrapy 抓取与并发参数
 
-004 当前已暂停。005 已补齐 M3a 自适应 politeness 与出口并发控制参数；恢复 004 前必须以 `STICKY_POOL`、per-(host, ip) pacer、IP cooldown、host slowdown 和本地有界延迟作为生产默认，`CONCURRENT_REQUESTS_PER_DOMAIN` / `DOWNLOAD_DELAY` 仅保留为 Scrapy fallback 约束。
+004 当前已恢复验证。005 已补齐 M3a 自适应 politeness 与出口并发控制参数；004 收口必须以 `STICKY_POOL`、per-(host, ip) pacer、IP cooldown、host slowdown 和本地有界延迟作为 production / staging 默认，`CONCURRENT_REQUESTS_PER_DOMAIN` / `DOWNLOAD_DELAY` 仅保留为 Scrapy fallback 约束。
 
 | key | 映射环境变量 | 建议值 | 说明 |
 |---|---|---|---|
@@ -193,7 +199,7 @@ data:
   fetch_queue_read_count: "10"
   fetch_queue_block_ms: "1000"
   fetch_queue_max_deliveries: "3"
-  fetch_queue_claim_min_idle_ms: "60000"
+  fetch_queue_claim_min_idle_ms: "600000"
   fetch_queue_shutdown_drain_seconds: "25"
   fetch_queue_max_messages: "0"
   concurrent_requests: "<min(ip_count * per_ip_concurrency, global_cap)>"
