@@ -2,7 +2,7 @@
 
 **输入**：`spec.md`、`plan.md`、`research.md`、`data-model.md`  
 **前置条件**：P2 Redis Streams 队列消费目标节点验证通过；ADR-0013 已接受；具备至少 1-2 台 crawler 测试 node。
-**当前状态**：已恢复，staging 验证中。2026-05-03 起，005 已完成本地实现与 staging OKE 等价镜像环境验证，004 从暂停现场恢复，进入剩余目标集群验证与关闭收口阶段。
+**当前状态**：已完成。2026-05-03 起，005 已完成本地实现与 staging OKE 等价镜像环境验证，004 从暂停现场恢复并完成 staging 关闭验证；production 复刻进入后续发布流程。
 
 ## 暂停与恢复现场
 
@@ -77,19 +77,19 @@
 - [x] T035b 恢复 004 前，完成新 spec 对生产功能性缺口的补齐与评审：005 已完成本地实现与 staging OKE 等价镜像环境验证。
 - [x] T035 在至少 1 个 crawler node 上部署 DaemonSet，验证 pod 使用 hostNetwork 并发现 IP 池：staging 审计通过，`enp0s5` 发现 5 个 IPv4。
 - [x] T036 在至少 2 个 crawler node 上部署 DaemonSet，验证每 node 一个 pod：staging 审计通过，2 个 `scrapy-egress=true` node 各 1 个 Running pod。
-- [ ] T037 向生产测试 stream 写入 Fetch Command，验证多个 pod 常驻消费并发布 `crawl_attempt` 后 `XACK`；需在 Kafka/CA 修复后重新执行干净 smoke，并记录 PEL 回到 0。
+- [x] T037 向生产测试 stream 写入 Fetch Command，验证多个 pod 常驻消费并发布 `crawl_attempt` 后 `XACK`；staging T037 v3 两条 HTML smoke 均 `storage_result=stored`，最终 PEL `pending=0`。
 - [x] T037a 修复 staging T037 暴露的 reactor 阻塞风险：`FetchQueueSpider.start()` 不再在 async loop 中同步执行 Redis `ensure_group` / `XREADGROUP`，改为线程 offload；本地相关单元测试通过。
-- [ ] T037b 使用包含 T037a 修复的新镜像重新执行 staging T037，确认 response/errback、`crawl_attempt` 发布和 PEL 清空。
-- [ ] T038 手动删除单个 pod，验证未完成消息留 PEL 且后续可 reclaim；允许少量重复抓取。
-- [ ] T039 验证 Kafka / Redis / OCI 短暂依赖异常进入指标和告警，而不触发 liveness 雪崩；Kafka failure 指标已观察，仍需补 Redis / OCI 或形成明确例外记录。
-- [ ] T040 验证指定 node 的 debug stream 路由与 `tier=debug` 事件边界。
-- [ ] T041 验证 pause flag 能停止读取新消息并可恢复（目标集群传播验证脚本已准备：`deploy/scripts/run-m3-k8s-pause-flag-validation.sh`）。
-- [ ] T041a 补 Object Storage 内容写入权限验证；204 smoke 不能替代 HTML 内容持久化验证。
+- [x] T037b 使用包含 T037a 修复的新镜像重新执行 staging T037，确认 response/errback、`crawl_attempt` 发布和 PEL 清空。
+- [x] T038 手动删除单个 pod，验证未完成消息留 PEL 且后续可 reclaim；staging 临时 `FETCH_QUEUE_CLAIM_MIN_IDLE_MS=5000` 触发接管，消息最终发布并 `XACK`，PEL `pending=0`；重复 publish 符合当前少量重复抓取假设。
+- [x] T039 验证 Kafka / Redis / OCI 短暂依赖异常进入指标和告警，而不触发 liveness 雪崩；staging 已观察 Kafka 依赖异常进入指标且 liveness/readiness 保持 OK，Redis/OCI 本轮完成正向 smoke，破坏性 Redis/OCI 故障注入留给 production 运维验证。
+- [x] T040 验证指定 node 的 debug stream 路由与 `tier=debug` 事件边界；staging 临时 `CRAWLER_DEBUG_MODE=true` 后解析为 `crawl:tasks:debug:<node>` / `crawler-executor-debug:<node>` / `${NODE_NAME}-${POD_NAME}-debug`，debug HTML smoke 发布 `storage_result=stored`，debug PEL `pending=0`。
+- [x] T041 验证 pause flag 能停止读取新消息并可恢复；staging ConfigMap volume 传播脚本通过，严格 pause 测试中 paused 阶段不消费且 PEL `pending=0`，恢复后 HTML smoke 发布 `storage_result=stored` 并回到 `pending=0`。
+- [x] T041a 补 Object Storage 内容写入权限验证；staging `p1_object_storage_smoke_ok`，HTML smoke 多次 `storage_result=stored`。
 
 ## 阶段 8：文档收口
 
-- [ ] T042 更新 `quickstart.md` 的目标集群部署和验证记录。
-- [ ] T043 更新 `state/current.md`、`state/roadmap.md`、`state/changelog.md`。
+- [x] T042 更新 `quickstart.md` 的目标集群部署和验证记录。
+- [x] T043 更新 `state/current.md`、`state/roadmap.md`、`state/changelog.md`。
 - [x] T044 若 M3 实现发现需要改变 ADR-0011 或 ADR-0009，先新增 / 修订 ADR，再更新 plan：ADR-0013 已接受并替代 ADR-0011 的默认 rollout 策略。
 
 ## 依赖与执行顺序

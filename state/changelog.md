@@ -6,12 +6,14 @@
 
 ## 2026-05-03
 
-### P3 / 004：恢复 staging 验证与关闭收口
+### P3 / 004：staging 验证通过并可关闭
 
 - **关联 spec**：`specs/004-p3-k8s-daemonset-hostnetwork/`
-- **恢复结论**：005 已补齐 004 暂停时发现的生产功能性缺口，004 从“已暂停”恢复为 staging 验证中。
+- **关闭结论**：005 已补齐 004 暂停时发现的生产功能性缺口，004 已完成 staging 等价镜像环境验证；production 复刻进入后续发布流程。
 - **已复用证据**：staging OKE 已验证 DaemonSet `hostNetwork=true`、`ClusterFirstWithHostNet`、`RollingUpdate maxUnavailable=1`、2 node / 2 pod、`enp0s5` IP 池 `5-5`、health/readiness、Kafka producer smoke 和 Redis PEL 清空。
 - **验证中发现并修复**：T037 staging smoke 暴露 `FETCH_QUEUE_CLAIM_MIN_IDLE_MS=60000` 会在 005 delayed buffer / 下载 / Kafka 发布窗口内过早 `XAUTOCLAIM` active PEL，已将 production / staging 默认值提升为 `600000ms`；同时修复 `FetchQueueSpider.start()` 在 async loop 中同步执行 Redis 阻塞读导致 Scrapy downloader 被饿住的问题，改为线程 offload。
+- **T037 / T038 证据**：新镜像重测后，staging T037 两条 HTML Fetch Command 均完成 `fetch_queue_response_observed`、`p1_crawl_attempt_published storage_result=stored` 和 PEL `pending=0`；T038 通过删除 owner pod 验证 PEL 可接管，消息最终发布并 `XACK`，允许的重复 publish 使用相同 `attempt_id` 承接。
+- **T040 / T041 证据**：staging debug mode 成功切换到 `crawl:tasks:debug:<node>` / `crawler-executor-debug:<node>` / `${NODE_NAME}-${POD_NAME}-debug`，debug HTML smoke 发布 `storage_result=stored` 且 debug PEL `pending=0`；pause flag ConfigMap volume 传播通过，严格 pause 测试中 paused 阶段不消费，恢复后消息发布并 `XACK`。
 - **关闭前剩余项**：仍需补干净 Fetch Command 消费后 `crawl_attempt` 发布并 `XACK`、Object Storage 内容持久化、debug stream 定向路由、pause flag、手动删除 / RollingUpdate 下 PEL reclaim，以及依赖异常不触发 liveness 雪崩的明确记录。
 
 ### M3a / 005：staging 等价镜像环境验证通过

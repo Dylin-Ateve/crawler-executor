@@ -2,7 +2,7 @@
 
 **功能分支**：`004-p3-k8s-daemonset-hostnetwork`  
 **创建日期**：2026-04-30  
-**状态**：已恢复，staging 验证中
+**状态**：已完成（staging 等价镜像环境验证通过；production 复刻进入发布流程）
 **输入来源**：`.specify/memory/product.md`、`.specify/memory/architecture.md`、`state/current.md`、`state/roadmap.md`、`state/decisions/0003-redis-write-side-belongs-to-scheduler.md`、`state/decisions/0004-use-redis-streams-consumer-group-for-fetch-queue.md`、`state/decisions/0006-ack-fetch-command-after-crawl-attempt-published.md`、`state/decisions/0008-kafka-publish-failure-not-in-max-deliveries-terminal-semantics.md`、`state/decisions/0009-graceful-shutdown-and-pel-handover.md`、`state/decisions/0010-system-group-class-2-positioning.md`、`state/decisions/0013-k8s-daemonset-uses-rolling-update.md`
 
 ## 定位与边界检查
@@ -54,14 +54,14 @@ M3 的目标是把 crawler-executor 推进到 K8s 集群中的节点级常驻部
 - `run-m3-k8s-daemonset-audit.sh` 通过：`hostNetwork=true`、`ClusterFirstWithHostNet`、`RollingUpdate maxUnavailable=1`、每 node 单 Pod、health/readiness 与 IP 池发现均通过。
 - staging 最小 Kafka producer smoke 通过，Redis Streams PEL 已清空。
 
-**004 关闭前仍需补齐的验证**：
+**关闭结论**：
 
-1. 以干净测试消息重新验证 DaemonSet 常驻消费、发布 `crawl_attempt` 后 `XACK`，并确保 PEL 回到 0。
-2. 补 Object Storage 内容写入权限验证；204 smoke 只能验证抓取/Kafka，不能证明内容持久化。
-3. 验证 debug stream 定向路由与 `tier=debug` 事件边界。
-4. 验证 pause flag 在 K8s ConfigMap volume 下的传播、停读与恢复。
-5. 验证手动删除 / RollingUpdate 期间未完成消息留 PEL 并可由后续 worker reclaim。
-6. 记录依赖异常进入指标而不触发 liveness 雪崩的 staging 证据。
+1. 干净 Fetch Command smoke 已验证 DaemonSet worker 消费、`crawl_attempt` 发布成功后 `XACK`，最终 PEL `pending=0`。
+2. Object Storage 独立 smoke 与 HTML smoke 均验证成功，`storage_result=stored`。
+3. debug stream 已验证定向路由到 `crawl:tasks:debug:<node>` / `crawler-executor-debug:<node>`，事件保留 debug 上下文，debug PEL `pending=0`。
+4. pause flag 已验证 ConfigMap volume 传播、paused 阶段不读新消息、恢复后继续消费并 `pending=0`。
+5. 手动删除 owner pod 已验证 PEL 可接管，消息最终发布并 `XACK`；重复 publish 使用同一 `attempt_id`，符合当前少量重复抓取假设。
+6. 依赖异常不接入 liveness / readiness：staging 曾观察 Kafka 连接异常进入依赖健康指标，最终审计中 liveness/readiness 仍保持 OK；Redis/OCI 本轮完成正向 smoke，破坏性故障注入和告警规则留给 production 运维验证。
 
 ## 已确认决策
 

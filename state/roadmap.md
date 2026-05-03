@@ -32,10 +32,10 @@
 ### M3：生产部署基础
 
 - **目标**：K8s DaemonSet + hostNetwork、健康探针、指标端口、配置注入和节点隔离。
-- **状态**：staging 部署基础通过，004 已恢复关闭验证；production 待复刻。004 已完成部署方案、模板和 staging 集群基础验证；生产部署前发现的 005 功能性遗漏已在 M3a 中补齐。
+- **状态**：staging 验证通过，production 待复刻。004 已完成部署方案、模板和 staging 集群验证；生产部署前发现的 005 功能性遗漏已在 M3a 中补齐。
 - **对应 spec**：`specs/004-p3-k8s-daemonset-hostnetwork/`
 - **当前现场**：staging `scrapy-node-pool`、`subnetCollection 10.0.12.0/22`、`scrapy-egress=true`、`enp0s5`、2 个 node、每 node 5 个 IPv4；`crawler-executor` namespace、Redis/Kafka Secret、DaemonSet、ConfigMap、Kafka publish smoke 和 Redis Streams PEL 清空均已验证通过。
-- **恢复条件**：staging 已满足，004 已恢复；关闭前仍需补干净消费后 `crawl_attempt` / `XACK`、Object Storage、debug stream、pause flag、PEL reclaim 和依赖异常指标记录。production 需按 staging 同一流程复刻 Redis PING、Kafka publish smoke、Object Storage 权限、真实 ConfigMap 审核、DaemonSet dry-run / apply 和集群审计。
+- **恢复条件**：staging 已满足，004 可关闭；production 需按 staging 同一流程复刻 Redis PING、Kafka publish smoke、Object Storage 权限、真实 ConfigMap 审核、DaemonSet dry-run / apply 和集群审计。
 - **验收信号**：节点扩缩容时 worker 自动跟随；liveness 仅反映进程 / reactor / metrics endpoint 基本存活；Kafka / Redis / OCI 依赖异常通过 Prometheus 指标和告警反映，不因短暂抖动触发探针失败。
 
 ### M3a：自适应 Politeness 与出口并发控制
@@ -75,7 +75,7 @@
 1. Redis 只读边界审计补强：在现有 key diff + `XLEN` 前后对比之外，增加允许状态变化清单和更宽 audit pattern。
 2. T015c 严格优雅停机收口：更早设置 shutdown flag，确保 SIGTERM 后立即停止 `XREADGROUP` / `XAUTOCLAIM`，并明确 drain deadline 是否强制退出。
 3. production 复刻 staging 验证：真实多出口 IP 下验证 sticky-pool、pacer、soft-ban feedback、delayed buffer、Redis 写入边界、Kafka publish smoke、Object Storage 权限和指标抓取。
-4. K8s DaemonSet + hostNetwork production 部署。staging 部署基础已通过，004 关闭仍需补 debug、pause、PEL reclaim、Object Storage 和干净消费证据；production 仍需 dry-run、apply 与集群审计。
+4. K8s DaemonSet + hostNetwork production 部署。staging 已验证通过；production 仍需 dry-run、apply 与集群审计。
 5. Grafana 基础看板、告警和运维 SOP。
 6. 24 小时稳定性压测、30-50 pages/sec 单节点目标验证。
 7. 控制平面策略运行时覆盖。
@@ -95,7 +95,7 @@
 
 ## 5. 下一阶段建议
 
-staging 已作为 production 功能验证等价镜像环境完成 004 / 005 的部署基础和 005 功能验证。下一步先在 staging 补齐 004 剩余关闭项：干净 Fetch Command 消费、`crawl_attempt` 发布后 `XACK`、Object Storage 内容持久化、debug stream、pause flag、手动删除 / RollingUpdate 下 PEL reclaim 和依赖异常指标记录。004 关闭后，再按同一操作流程在 production 复刻：确认 node pool / subnet / node label / taint 口径一致，补齐 production 网络规则、Secret、ConfigMap 审核、DaemonSet dry-run / apply、Kafka publish smoke、Object Storage 权限和 PEL 清空验证。
+staging 已作为 production 功能验证等价镜像环境完成 004 / 005 的部署基础、005 功能验证，以及 004 的干净 Fetch Command 消费、`crawl_attempt` 发布后 `XACK`、Object Storage 内容持久化、debug stream、pause flag、手动删除 / RollingUpdate 下 PEL reclaim。004 可在 staging 口径下关闭；下一步按同一操作流程在 production 复刻：确认 node pool / subnet / node label / taint 口径一致，补齐 production 网络规则、Secret、ConfigMap 审核、DaemonSet dry-run / apply、Kafka publish smoke、Object Storage 权限和 PEL 清空验证。
 
 M3 第一版仍按 T015c 过渡运行假设设计：低频手动滚动、任务幂等、允许少量重复抓取、PEL 可恢复。若后续滚动重启频率提高或重复抓取不可接受，应先修正严格优雅停机入口与 drain deadline，再恢复 004 部署推进。
 

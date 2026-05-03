@@ -402,8 +402,8 @@ kubectl -n <namespace> patch configmap crawler-executor-config \
 | DaemonSet 调度 | 每个 crawler node 一个 pod | staging 2 node / 2 pod 已通过 | staging 通过 |
 | hostNetwork | pod 可见宿主机 IP 池 | `hostNetwork=true`、pod IP 等于 host IP 已通过 | staging 通过 |
 | IP 池规模 | staging 5-5；production 60-70 | staging `enp0s5` 发现 5 个 IPv4 | staging 通过，production 待复刻 |
-| 常驻消费 | Redis Streams 消费并发布 `crawl_attempt` 后 ack | 待实现后填写 | 待验证 |
-| 探针 | liveness 不因依赖短暂抖动失败 | 待实现后填写 | 待验证 |
-| debug stream | 指定 node / pod 消费 debug 流量 | 待实现后填写 | 待验证 |
-| 手动滚动 | PEL 可恢复，允许少量重复 | 待实现后填写 | 待验证 |
-| pause flag | 停止读取新消息并可恢复 | 待实现后填写 | 待验证 |
+| 常驻消费 | Redis Streams 消费并发布 `crawl_attempt` 后 ack | T037 v3 两条 HTML smoke 均 `storage_result=stored`，PEL `pending=0` | staging 通过 |
+| 探针 | liveness 不因依赖短暂抖动失败 | 最终审计 liveness/readiness OK；Kafka 依赖异常曾进入指标但不触发探针失败 | staging 通过 |
+| debug stream | 指定 node / pod 消费 debug 流量 | `crawl:tasks:debug:<node>` / `crawler-executor-debug:<node>` 验证通过，debug PEL `pending=0` | staging 通过 |
+| 手动滚动 | PEL 可恢复，允许少量重复 | 删除 owner pod 后消息被接管并发布，最终 PEL `pending=0` | staging 通过 |
+| pause flag | 停止读取新消息并可恢复 | paused 阶段不消费，恢复后发布并 `pending=0` | staging 通过 |
