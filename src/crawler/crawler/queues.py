@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import socket
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Dict, Iterable, List, Mapping, Optional
 
 from crawler.attempts import build_command_attempt_id
@@ -102,8 +103,8 @@ def parse_fetch_command(fields: Mapping[object, object], *, stream_id: Optional[
         tier=_optional(decoded, "tier"),
         politeness_key=_optional(decoded, "politeness_key"),
         policy_scope_id=_optional(decoded, "policy_scope_id"),
-        deadline_at=_optional(decoded, "deadline_at"),
-        max_retries=_optional_int(decoded, "max_retries"),
+        deadline_at=_optional_datetime_text(decoded, "deadline_at"),
+        max_retries=_optional_int(decoded, "max_retries", minimum=0, maximum=100),
         stream_id=stream_id,
         deliveries=deliveries,
     )
@@ -368,11 +369,28 @@ def _optional(fields: Mapping[str, str], key: str) -> Optional[str]:
     return value or None
 
 
-def _optional_int(fields: Mapping[str, str], key: str) -> Optional[int]:
+def _optional_int(fields: Mapping[str, str], key: str, *, minimum: Optional[int] = None, maximum: Optional[int] = None) -> Optional[int]:
     value = _optional(fields, key)
     if value is None:
         return None
     try:
-        return int(value)
+        parsed = int(value)
     except ValueError as exc:
         raise FetchCommandError(f"{key} must be an integer") from exc
+    if minimum is not None and parsed < minimum:
+        raise FetchCommandError(f"{key} must be >= {minimum}")
+    if maximum is not None and parsed > maximum:
+        raise FetchCommandError(f"{key} must be <= {maximum}")
+    return parsed
+
+
+def _optional_datetime_text(fields: Mapping[str, str], key: str) -> Optional[str]:
+    value = _optional(fields, key)
+    if value is None:
+        return None
+    normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
+    try:
+        datetime.fromisoformat(normalized)
+    except ValueError as exc:
+        raise FetchCommandError(f"{key} must be an ISO-8601 timestamp") from exc
+    return value

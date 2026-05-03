@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import signal
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -22,6 +23,7 @@ from crawler.fetch_safety_state import EgressCooldownState, ExecutionStateKeyBui
 from crawler.health import mark_worker_initialized, record_consumer_heartbeat
 from crawler.ip_pool import discover_local_ips
 from crawler.metrics import metrics
+from crawler.policy_provider import build_runtime_policy_provider
 from crawler.politeness import (
     HostIpPacerConfig,
     HostIpPacerState,
@@ -29,6 +31,7 @@ from crawler.politeness import (
     pacer_decision,
 )
 from crawler.queues import FetchCommand, RedisStreamsFetchConsumer
+from crawler.runtime_policy import EffectivePolicy, EffectivePolicyDocument, PolicyDecision, decide_policy
 
 
 RETRYABLE_HTTP_STATUS_CODES = {408, 429, 500, 502, 503, 504, 522, 524}
@@ -43,6 +46,7 @@ class LocalDelayedFetchCommand:
     delay_reason: str
     selected_identity_hash: str
     warning_logged: bool = False
+    max_local_delay_seconds: Optional[int] = None
 
 
 class LocalDelayedBuffer:
@@ -92,6 +96,7 @@ class LocalDelayedBuffer:
                 delay_reason=item.delay_reason,
                 selected_identity_hash=item.selected_identity_hash,
                 warning_logged=True,
+                max_local_delay_seconds=item.max_local_delay_seconds,
             )
             if item.message_id == message_id and item.selected_identity_hash == identity_hash
             else item
@@ -131,6 +136,7 @@ class FetchQueueSpider(scrapy.Spider):
         self.stop_reading_when_delayed_buffer_full = True
         self._pacer_states: dict[tuple[str, str], HostIpPacerState] = {}
         self.fetch_safety_store: Optional[FetchSafetyStateStore] = None
+        self.policy_provider = None
 
     @classmethod
     def from_crawler(cls, crawler, *args, **kwargs):
@@ -144,9 +150,10 @@ class FetchQueueSpider(scrapy.Spider):
             "FETCH_QUEUE_SHUTDOWN_DRAIN_SECONDS", 25
         )
         spider._configure_m3a(crawler.settings)
-        # ADR-0009：不注册自定义 signal.signal() handler，通过 Scrapy 自身关停信号
-        # 触发 consumer.request_shutdown()。spider_closed 与 engine_stopped 的连接
-        # 形成 "进入停机标志 → 进入 drain → 退出总结" 的闭环。
+        spider.policy_provider = build_runtime_policy_provider(crawler.settings)
+        spider._install_signal_handlers()
+        # M4：尽早通过 signal handler 设置 shutdown flag；Scrapy 自身信号仍作为
+        # 兜底入口和退出总结。
         crawler.signals.connect(
             spider._on_spider_closed, signal=scrapy_signals.spider_closed
         )
@@ -155,14 +162,32 @@ class FetchQueueSpider(scrapy.Spider):
         )
         return spider
 
+    def _install_signal_handlers(self) -> None:
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            try:
+                previous = signal.getsignal(sig)
+
+                def handler(signum, frame, previous_handler=previous):
+                    self._request_shutdown(f"signal:{signum}")
+                    if callable(previous_handler):
+                        previous_handler(signum, frame)
+
+                signal.signal(sig, handler)
+            except Exception:
+                self.logger.debug("fetch_queue_signal_handler_install_failed signal=%s", sig, exc_info=True)
+
     def _on_spider_closed(self, spider, reason):
         if spider is not self:
             return
+        self._request_shutdown(str(reason))
+
+    def _request_shutdown(self, reason: str) -> None:
         if self.consumer.is_shutting_down:
             return
         self._shutdown_started_at = time.monotonic()
         self.consumer.request_shutdown()
         metrics.record_fetch_queue_event("shutdown")
+        metrics.record_shutdown_event("requested")
         self.logger.info(
             "fetch_queue_shutdown_signal_received reason=%s seen_messages=%s acked_count=%s drain_seconds=%s",
             reason,
@@ -182,6 +207,8 @@ class FetchQueueSpider(scrapy.Spider):
             elapsed = time.monotonic() - self._shutdown_started_at
         drain_timeout = elapsed > self.shutdown_drain_seconds
         in_flight_estimate = max(self.seen_messages - self.consumer.acked_count, 0)
+        metrics.set_shutdown_in_flight(in_flight_estimate)
+        metrics.record_shutdown_event("drain_timeout" if drain_timeout else "drain_completed")
         self.logger.info(
             "fetch_queue_shutdown_loop_exit elapsed_seconds=%.3f drain_timeout=%s seen_messages=%s acked_count=%s in_flight_estimate=%s",
             elapsed,
@@ -268,7 +295,9 @@ class FetchQueueSpider(scrapy.Spider):
         *,
         egress_identity: Optional[EgressIdentity] = None,
         host: Optional[str] = None,
+        policy_decision: Optional[PolicyDecision] = None,
     ) -> scrapy.Request:
+        policy_decision = policy_decision or self._policy_decision(command)
         attempted_at = datetime.now(timezone.utc)
         meta = command.to_request_meta()
         meta.update(
@@ -277,8 +306,15 @@ class FetchQueueSpider(scrapy.Spider):
                 "stream_message_id": message_id,
                 "fetch_queue_consumer": self.consumer,
                 "handle_httpstatus_all": True,
+                "effective_max_retries": self._effective_max_retries(command, policy_decision),
+                "policy_version": policy_decision.policy_version,
+                "matched_policy_scope_type": policy_decision.matched_scope_type,
+                "matched_policy_scope_id": policy_decision.matched_scope_id,
+                "policy_lkg_active": policy_decision.lkg_active,
             }
         )
+        if policy_decision.policy.download_timeout_seconds is not None:
+            meta["download_timeout"] = policy_decision.policy.download_timeout_seconds
         if egress_identity is not None and host:
             meta.update(
                 {
@@ -362,17 +398,42 @@ class FetchQueueSpider(scrapy.Spider):
         *,
         read_at_ms: Optional[int] = None,
         warning_logged: bool = False,
-    ) -> Optional[scrapy.Request]:
-        if self.egress_selection_strategy != "STICKY_POOL":
-            return self._build_request(command, message_id)
+    ):
+        policy_decision = self._policy_decision(command)
+        if policy_decision.policy.is_paused:
+            metrics.record_fetch_paused(
+                policy_decision.matched_scope_type,
+                policy_decision.policy.pause_reason or "paused",
+            )
+            return self._terminal_skip_item(
+                command,
+                message_id,
+                error_type="paused",
+                error_message=policy_decision.policy.pause_reason or "Fetch command paused before request start",
+                policy_decision=policy_decision,
+            )
+        if self._deadline_expired(command):
+            metrics.record_fetch_deadline_expired(policy_decision.matched_scope_type)
+            return self._terminal_skip_item(
+                command,
+                message_id,
+                error_type="deadline_expired",
+                error_message="Fetch command deadline expired before request start",
+                policy_decision=policy_decision,
+            )
+
+        egress_selection_strategy = policy_decision.policy.egress_selection_strategy or self.egress_selection_strategy
+        if egress_selection_strategy != "STICKY_POOL":
+            return self._build_request(command, message_id, policy_decision=policy_decision)
 
         now_ms = self._now_ms()
         read_at = read_at_ms if read_at_ms is not None else now_ms
         host = self._command_host(command)
+        sticky_pool_size = policy_decision.policy.sticky_pool_size or self.sticky_pool_size
         assignment = build_sticky_pool_assignment(
             host,
             self.egress_identities,
-            pool_size=self.sticky_pool_size,
+            pool_size=sticky_pool_size,
             hash_salt=self.egress_hash_salt,
             now_ms=now_ms,
         )
@@ -406,6 +467,7 @@ class FetchQueueSpider(scrapy.Spider):
                 selected_identity_hash="all_candidates",
                 warning_logged=warning_logged,
                 host_hash=host_hash,
+                max_local_delay_seconds=policy_decision.policy.max_local_delay_seconds,
             )
             return None
         pacer_key = (host_hash, identity.identity_hash)
@@ -427,19 +489,122 @@ class FetchQueueSpider(scrapy.Spider):
                 selected_identity_hash=identity.identity_hash,
                 warning_logged=warning_logged,
                 host_hash=host_hash,
+                max_local_delay_seconds=policy_decision.policy.max_local_delay_seconds,
             )
             return None
 
         self._pacer_states[pacer_key] = mark_request_started(
             state,
-            self.pacer_config,
+            self._policy_pacer_config(policy_decision),
             now_ms,
             host_slowdown_factor=host_slowdown_factor,
         )
         metrics.record_egress_identity_selected("sticky_pool", identity.identity_type)
         metrics.observe_sticky_pool_candidate_count("sticky_pool", assignment.pool_size_actual)
         self._record_delayed_buffer_metrics()
-        return self._build_request(command, message_id, egress_identity=identity, host=host)
+        return self._build_request(
+            command,
+            message_id,
+            egress_identity=identity,
+            host=host,
+            policy_decision=policy_decision,
+        )
+
+    def _policy_decision(self, command: FetchCommand) -> PolicyDecision:
+        if self.policy_provider:
+            snapshot = self.policy_provider.current()
+            document = snapshot.document
+            lkg_active = snapshot.lkg_active
+        else:
+            document = EffectivePolicyDocument(
+                schema_version="1.0",
+                version="bootstrap-spider",
+                generated_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                default_policy=EffectivePolicy(
+                    egress_selection_strategy=self.egress_selection_strategy,
+                    sticky_pool_size=self.sticky_pool_size,
+                    host_ip_min_delay_ms=self.pacer_config.min_delay_ms,
+                    host_ip_jitter_ms=self.pacer_config.jitter_ms,
+                    max_retries=max(int(getattr(self.consumer, "max_deliveries", 3)) - 1, 0),
+                    max_local_delay_seconds=self.max_local_delay_seconds,
+                ),
+            )
+            lkg_active = False
+        decision = decide_policy(document, command.to_request_meta(), lkg_active=lkg_active)
+        metrics.record_policy_decision(decision.matched_scope_type)
+        return decision
+
+    def _policy_pacer_config(self, decision: PolicyDecision) -> HostIpPacerConfig:
+        return replace(
+            self.pacer_config,
+            min_delay_ms=decision.policy.host_ip_min_delay_ms
+            if decision.policy.host_ip_min_delay_ms is not None
+            else self.pacer_config.min_delay_ms,
+            jitter_ms=decision.policy.host_ip_jitter_ms
+            if decision.policy.host_ip_jitter_ms is not None
+            else self.pacer_config.jitter_ms,
+        )
+
+    def _effective_max_retries(self, command: FetchCommand, decision: PolicyDecision) -> int:
+        if command.max_retries is not None:
+            return command.max_retries
+        if decision.policy.max_retries is not None:
+            return decision.policy.max_retries
+        return max(int(getattr(self.consumer, "max_deliveries", 3)) - 1, 0)
+
+    @staticmethod
+    def _deadline_expired(command: FetchCommand) -> bool:
+        if not command.deadline_at:
+            return False
+        normalized = command.deadline_at[:-1] + "+00:00" if command.deadline_at.endswith("Z") else command.deadline_at
+        deadline = datetime.fromisoformat(normalized)
+        if deadline.tzinfo is None:
+            deadline = deadline.replace(tzinfo=timezone.utc)
+        return datetime.now(timezone.utc) >= deadline.astimezone(timezone.utc)
+
+    def _terminal_skip_item(
+        self,
+        command: FetchCommand,
+        message_id: str,
+        *,
+        error_type: str,
+        error_message: str,
+        policy_decision: PolicyDecision,
+    ):
+        now = datetime.now(timezone.utc)
+        return {
+            "p1_candidate": True,
+            "fetch_failed": True,
+            "url": command.url,
+            "canonical_url": command.canonical_url,
+            "url_hash": command.url_hash,
+            "status_code": None,
+            "content_type": None,
+            "response_headers": {},
+            "body": b"",
+            "outlinks": [],
+            "error_type": error_type,
+            "error_message": error_message,
+            "egress_local_ip": None,
+            "observed_egress_ip": None,
+            "attempt_id": command.attempt_id,
+            "attempted_at_dt": now,
+            "fetched_at_dt": now,
+            "command_id": command.command_id,
+            "job_id": command.job_id,
+            "trace_id": command.trace_id,
+            "host_id": command.host_id,
+            "site_id": command.site_id,
+            "tier": command.tier,
+            "politeness_key": command.politeness_key,
+            "policy_scope_id": command.policy_scope_id,
+            "policy_version": policy_decision.policy_version,
+            "matched_policy_scope_type": policy_decision.matched_scope_type,
+            "matched_policy_scope_id": policy_decision.matched_scope_id,
+            "policy_lkg_active": policy_decision.lkg_active,
+            "stream_message_id": message_id,
+            "fetch_queue_consumer": self.consumer,
+        }
 
     def _log_expired_delayed_commands(self) -> None:
         if not len(self.delayed_buffer):
@@ -447,7 +612,10 @@ class FetchQueueSpider(scrapy.Spider):
         now_ms = self._now_ms()
         for delayed in list(self.delayed_buffer._items):
             age_seconds = (now_ms - delayed.read_at_ms) / 1000.0
-            if age_seconds < self.max_local_delay_seconds or delayed.warning_logged:
+            max_delay_seconds = delayed.max_local_delay_seconds
+            if max_delay_seconds is None:
+                max_delay_seconds = self.max_local_delay_seconds
+            if age_seconds < max_delay_seconds or delayed.warning_logged:
                 continue
             metrics.record_fetch_queue_event("max_local_delay_exceeded")
             metrics.record_delayed_message_expired(delayed.delay_reason)
@@ -524,6 +692,7 @@ class FetchQueueSpider(scrapy.Spider):
         selected_identity_hash: str,
         warning_logged: bool,
         host_hash: str,
+        max_local_delay_seconds: Optional[int] = None,
     ) -> None:
         delayed = LocalDelayedFetchCommand(
             command=command,
@@ -533,6 +702,7 @@ class FetchQueueSpider(scrapy.Spider):
             delay_reason=delay_reason,
             selected_identity_hash=selected_identity_hash,
             warning_logged=warning_logged,
+            max_local_delay_seconds=max_local_delay_seconds,
         )
         if self.delayed_buffer.add(delayed):
             metrics.record_fetch_queue_event("delayed")
@@ -614,6 +784,7 @@ class FetchQueueSpider(scrapy.Spider):
             )
             return
         if response.status in RETRYABLE_HTTP_STATUS_CODES:
+            metrics.record_fetch_retry_terminal("retry_exhausted")
             yield self._terminal_fetch_failed_item(
                 response.request,
                 error_type="retry_exhausted",
@@ -647,6 +818,10 @@ class FetchQueueSpider(scrapy.Spider):
             "tier": response.meta.get("tier"),
             "politeness_key": response.meta.get("politeness_key"),
             "policy_scope_id": response.meta.get("policy_scope_id"),
+            "policy_version": response.meta.get("policy_version"),
+            "matched_policy_scope_type": response.meta.get("matched_policy_scope_type"),
+            "matched_policy_scope_id": response.meta.get("matched_policy_scope_id"),
+            "policy_lkg_active": response.meta.get("policy_lkg_active"),
             "stream_message_id": response.meta.get("stream_message_id"),
             "fetch_queue_consumer": response.meta.get("fetch_queue_consumer"),
         }
@@ -677,9 +852,11 @@ class FetchQueueSpider(scrapy.Spider):
             return
         item = self._terminal_fetch_failed_item(
             request,
-            error_type="retry_exhausted" if self._delivery_count(request.meta) >= self.consumer.max_deliveries else error_type,
+            error_type="retry_exhausted" if self._delivery_count(request.meta) > self._max_retries(request.meta) else error_type,
             error_message=error_message,
         )
+        if item["error_type"] == "retry_exhausted":
+            metrics.record_fetch_retry_terminal("retry_exhausted")
         self.logger.warning(
             "fetch_queue_fetch_failed url=%s attempt_id=%s stream_message_id=%s error_type=%s error=%s",
             request.url,
@@ -727,6 +904,10 @@ class FetchQueueSpider(scrapy.Spider):
             "tier": request.meta.get("tier"),
             "politeness_key": request.meta.get("politeness_key"),
             "policy_scope_id": request.meta.get("policy_scope_id"),
+            "policy_version": request.meta.get("policy_version"),
+            "matched_policy_scope_type": request.meta.get("matched_policy_scope_type"),
+            "matched_policy_scope_id": request.meta.get("matched_policy_scope_id"),
+            "policy_lkg_active": request.meta.get("policy_lkg_active"),
             "stream_message_id": request.meta.get("stream_message_id"),
             "fetch_queue_consumer": request.meta.get("fetch_queue_consumer"),
         }
@@ -736,7 +917,7 @@ class FetchQueueSpider(scrapy.Spider):
         return response.status in RETRYABLE_HTTP_STATUS_CODES and self._should_retry_request(response.request)
 
     def _should_retry_request(self, request) -> bool:
-        return self._delivery_count(request.meta) < self.consumer.max_deliveries
+        return self._delivery_count(request.meta) <= self._max_retries(request.meta)
 
     @staticmethod
     def _delivery_count(meta) -> int:
@@ -744,6 +925,12 @@ class FetchQueueSpider(scrapy.Spider):
             return int(meta.get("stream_deliveries") or 1)
         except (TypeError, ValueError):
             return 1
+
+    def _max_retries(self, meta) -> int:
+        try:
+            return max(int(meta.get("effective_max_retries")), 0)
+        except (TypeError, ValueError):
+            return max(int(getattr(self.consumer, "max_deliveries", 3)) - 1, 0)
 
     @staticmethod
     def _content_type(response) -> str:

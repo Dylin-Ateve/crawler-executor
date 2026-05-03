@@ -185,3 +185,17 @@ deploy/scripts/run-m4-graceful-shutdown-validation.sh
 - Fetch Command parse / deadline / max retries 测试。
 - pause / deadline terminal attempt pipeline 测试。
 - graceful shutdown consumer / spider 测试。
+
+## 本地验证记录
+
+2026-05-03 本地执行结果：
+
+| 脚本 / 测试 | 结果 |
+|---|---|
+| `deploy/scripts/run-m4-policy-reload-validation.sh` | 通过 |
+| `deploy/scripts/run-m4-policy-lkg-validation.sh` | 通过 |
+| `deploy/scripts/run-m4-pause-validation.sh` | 通过 |
+| `deploy/scripts/run-m4-deadline-validation.sh` | 通过 |
+| `deploy/scripts/run-m4-max-retries-validation.sh` | 通过 |
+| `deploy/scripts/run-m4-graceful-shutdown-validation.sh` | 通过 |
+| `.venv/bin/pytest` | 通过，144 passed |

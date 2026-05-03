@@ -49,7 +49,7 @@
 ### M4：运行时执行策略与停抓控制
 
 - **目标**：在不改变 executor 只执行抓取指令的边界下，补齐 effective policy 契约、本地文件 / ConfigMap provider、运行时热加载、last-known-good、全局 / 作用域 pause、`deadline_at` 与 `max_retries` 生效、严格优雅停机收口和 M4 指标。
-- **状态**：规格草案已创建，尚未进入实现。
+- **状态**：本地实现与验证完成；staging / production 复刻不在本 spec 范围。
 - **对应 spec**：`specs/007-m4-runtime-policy-pause-control/`
 - **前置校准**：`specs/006-policy-scope-and-document-alignment/` 已通过 ADR-0014 移除旧 Heritrix 分组概念和外置 scheduler 旧目标，并补齐 `crawl_attempt` 执行上下文透传。
 - **策略边界**：M4 第一版只消费已经解析好的 effective policy；策略优先级、业务策略合并、Host/Site 成员关系解析、URL 选择、业务优先级和重抓窗口仍归控制平面或第六类，不在 executor 内实现。
@@ -104,16 +104,13 @@
 
 ## 3. 未完成关键生产能力
 
-1. M4 运行时执行策略：effective policy 契约、本地文件 / ConfigMap provider、热加载、last-known-good、全局 / 作用域 pause、`deadline_at` 与 `max_retries` 生效。
-2. T015c 严格优雅停机收口：更早设置 shutdown flag，确保 SIGTERM 后立即停止 `XREADGROUP` / `XAUTOCLAIM`，并明确 drain deadline 是否强制退出。
-3. M4 观测补齐：policy load、policy version、last-known-good、pause、deadline expired、max retries terminal、shutdown drain 等指标。
-4. production 复刻 staging 验证：真实多出口 IP 下验证 sticky-pool、pacer、soft-ban feedback、delayed buffer、Redis 写入边界、Kafka publish smoke、Object Storage 权限和指标抓取。
-5. K8s DaemonSet + hostNetwork production 部署。staging 已验证通过；production 仍需 dry-run、apply 与集群审计。
-6. Grafana 基础看板、告警和运维 SOP。
-7. 24 小时稳定性压测、30-50 pages/sec 单节点目标验证。
-8. 本地出站事件缓冲和 Kafka 故障补偿。
-9. Redis 只读边界审计补强：在现有 key diff + `XLEN` 前后对比之外，增加允许状态变化清单和更宽 audit pattern。
-10. poison message / DLQ 协议、队列分片与第六类反压契约。
+1. production 复刻 staging 验证：真实多出口 IP 下验证 sticky-pool、pacer、soft-ban feedback、delayed buffer、M4 policy / pause / deadline / retry、Redis 写入边界、Kafka publish smoke、Object Storage 权限和指标抓取。
+2. K8s DaemonSet + hostNetwork production 部署。staging 已验证通过；production 仍需 dry-run、apply 与集群审计。
+3. Grafana 基础看板、告警和运维 SOP。
+4. 24 小时稳定性压测、30-50 pages/sec 单节点目标验证。
+5. 本地出站事件缓冲和 Kafka 故障补偿。
+6. Redis 只读边界审计补强：在现有 key diff + `XLEN` 前后对比之外，增加允许状态变化清单和更宽 audit pattern。
+7. poison message / DLQ 协议、队列分片与第六类反压契约。
 
 ## 4. 明确后置或暂不规划
 
@@ -133,9 +130,9 @@
 
 staging 已作为 production 功能验证等价镜像环境完成 004 / 005 的部署基础、005 功能验证，以及 004 的干净 Fetch Command 消费、`crawl_attempt` 发布后 `XACK`、Object Storage 内容持久化、debug stream、pause flag、手动删除 / RollingUpdate 下 PEL reclaim。004 可在 staging 口径下关闭；production 复刻验证和正式部署后置到 M5，在明确进入生产发布前再按同一操作流程执行。
 
-下一步建议启动 M4 规格：实现 effective policy 契约、本地文件 / ConfigMap provider、热加载、last-known-good、全局 / 作用域 pause、`deadline_at` 与 `max_retries` 生效，并收口严格优雅停机。M4 第一版不得实现策略优先级、业务策略合并、Host/Site 成员关系管理、URL 调度或外置 scheduler。
+007 已完成 M4 本地实现与验证。下一步建议进入 M5 前的评审：确认是否先在 staging 等价环境复跑 M4 policy / pause / deadline / retry / shutdown 验证，再决定 production 复刻窗口。
 
-M3 第一版仍按 T015c 过渡运行假设设计：低频手动滚动、任务幂等、允许少量重复抓取、PEL 可恢复。M4 应优先修正严格优雅停机入口与 drain deadline，使后续 production 复刻前具备更清晰的滚动更新语义。
+M3 第一版曾按 T015c 过渡运行假设设计：低频手动滚动、任务幂等、允许少量重复抓取、PEL 可恢复。007 已补更早 shutdown flag 入口，使后续 production 复刻前具备更清晰的滚动更新语义；仍建议在 staging 复测 SIGTERM / PEL 行为后再进入 production。
 
 D-DEBT-5（只读边界 audit pattern 加宽）按现状层债务跟进，不阻塞 M3 启动。
 

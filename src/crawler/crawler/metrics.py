@@ -71,6 +71,16 @@ class CrawlerMetrics:
             self.execution_state_reads_total = _NoopMetric()
             self.execution_state_ttl_seconds = _NoopMetric()
             self.execution_state_forbidden_key_detected_total = _NoopMetric()
+            self.policy_load_total = _NoopMetric()
+            self.policy_current_version = _NoopMetric()
+            self.policy_lkg_active = _NoopMetric()
+            self.policy_lkg_age_seconds = _NoopMetric()
+            self.policy_decision_total = _NoopMetric()
+            self.fetch_paused_total = _NoopMetric()
+            self.fetch_deadline_expired_total = _NoopMetric()
+            self.fetch_retry_terminal_total = _NoopMetric()
+            self.shutdown_events_total = _NoopMetric()
+            self.shutdown_in_flight = _NoopMetric()
             return
 
         self.requests_total = Counter(
@@ -229,6 +239,53 @@ class CrawlerMetrics:
             "Total forbidden Redis key patterns detected by boundary audit.",
             ["pattern"],
         )
+        self.policy_load_total = Counter(
+            "crawler_policy_load_total",
+            "Total runtime policy load attempts.",
+            ["result"],
+        )
+        self.policy_current_version = Gauge(
+            "crawler_policy_current_version",
+            "Current runtime policy version.",
+            ["version"],
+        )
+        self.policy_lkg_active = Gauge(
+            "crawler_policy_lkg_active",
+            "Whether the runtime policy provider is using last-known-good.",
+        )
+        self.policy_lkg_age_seconds = Gauge(
+            "crawler_policy_lkg_age_seconds",
+            "Age of the current last-known-good runtime policy in seconds.",
+        )
+        self.policy_decision_total = Counter(
+            "crawler_policy_decision_total",
+            "Total runtime policy decisions.",
+            ["matched_scope_type"],
+        )
+        self.fetch_paused_total = Counter(
+            "crawler_fetch_paused_total",
+            "Total Fetch Commands skipped because the matched policy is paused.",
+            ["matched_scope_type", "reason"],
+        )
+        self.fetch_deadline_expired_total = Counter(
+            "crawler_fetch_deadline_expired_total",
+            "Total Fetch Commands skipped because deadline_at expired before request start.",
+            ["matched_scope_type"],
+        )
+        self.fetch_retry_terminal_total = Counter(
+            "crawler_fetch_retry_terminal_total",
+            "Total fetch-layer retry budget terminal attempts.",
+            ["reason"],
+        )
+        self.shutdown_events_total = Counter(
+            "crawler_shutdown_events_total",
+            "Total graceful shutdown events.",
+            ["event"],
+        )
+        self.shutdown_in_flight = Gauge(
+            "crawler_shutdown_in_flight",
+            "Estimated in-flight messages during graceful shutdown.",
+        )
 
     def record_response(self, host: str, status: str, egress_ip: str, duration_seconds: Optional[float]) -> None:
         self.requests_total.labels(host=host, status=status, egress_ip=egress_ip or "unknown").inc()
@@ -327,6 +384,39 @@ class CrawlerMetrics:
 
     def record_execution_state_forbidden_key_detected(self, pattern: str) -> None:
         self.execution_state_forbidden_key_detected_total.labels(pattern=pattern).inc()
+
+    def record_policy_load(self, result: str) -> None:
+        self.policy_load_total.labels(result=result).inc()
+
+    def set_policy_current_version(self, version: str) -> None:
+        self.policy_current_version.labels(version=version or "unknown").set(1)
+
+    def set_policy_lkg_active(self, active: bool) -> None:
+        self.policy_lkg_active.set(1 if active else 0)
+
+    def set_policy_lkg_age(self, age_seconds: float) -> None:
+        self.policy_lkg_age_seconds.set(max(float(age_seconds), 0.0))
+
+    def record_policy_decision(self, matched_scope_type: str) -> None:
+        self.policy_decision_total.labels(matched_scope_type=matched_scope_type or "default").inc()
+
+    def record_fetch_paused(self, matched_scope_type: str, reason: str) -> None:
+        self.fetch_paused_total.labels(
+            matched_scope_type=matched_scope_type or "default",
+            reason=reason or "paused",
+        ).inc()
+
+    def record_fetch_deadline_expired(self, matched_scope_type: str) -> None:
+        self.fetch_deadline_expired_total.labels(matched_scope_type=matched_scope_type or "default").inc()
+
+    def record_fetch_retry_terminal(self, reason: str) -> None:
+        self.fetch_retry_terminal_total.labels(reason=reason or "retry_exhausted").inc()
+
+    def record_shutdown_event(self, event: str) -> None:
+        self.shutdown_events_total.labels(event=event or "unknown").inc()
+
+    def set_shutdown_in_flight(self, count: int) -> None:
+        self.shutdown_in_flight.set(max(int(count), 0))
 
 
 metrics = CrawlerMetrics()

@@ -6,11 +6,13 @@
 
 ## 2026-05-03
 
-### M4 / 007：运行时执行策略与停抓控制规格草案
+### M4 / 007：运行时执行策略与停抓控制本地实现
 
 - **关联 spec**：`specs/007-m4-runtime-policy-pause-control/`
-- **新增内容**：创建 M4 规格、实施计划、研究记录、数据模型、effective policy 契约、Fetch Command M4 增量契约、M4 指标契约、quickstart 和任务清单。
-- **目标范围**：本地文件 / ConfigMap effective policy provider、热加载、last-known-good、全局 / 作用域 pause、`deadline_at` / `max_retries` 生效、严格优雅停机和 M4 指标。
+- **新增内容**：创建并完成 M4 本地实现，包含规格、实施计划、研究记录、数据模型、effective policy 契约、Fetch Command M4 增量契约、M4 指标契约、quickstart 和任务清单。
+- **交付范围**：本地文件 / ConfigMap effective policy provider、热加载、last-known-good、全局 / 作用域 pause、`deadline_at` / `max_retries` 生效、严格优雅停机入口和 M4 指标。
+- **代码收口**：新增 `runtime_policy.py`、`policy_provider.py`、M4 本地验证脚本和单元测试；`FetchQueueSpider` 已在运行时应用 effective policy、pause、deadline、retry budget、download timeout 与 terminal skip 后的 `crawl_attempt` 投递语义。
+- **验证结果**：本地通过 6 个 M4 quickstart 验证脚本；全量 `.venv/bin/pytest` 通过，结果为 144 passed。
 - **边界声明**：不实现策略优先级、业务策略合并、Host/Site 成员关系解析、URL 调度、production 复刻验证、Kafka outbox、DLQ 或完整 Grafana / 告警落地。
 
 ### M4 路线图口径校准：运行时执行策略与停抓控制
