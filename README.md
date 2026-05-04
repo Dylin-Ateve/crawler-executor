@@ -21,6 +21,7 @@ crawler-executor 是企业级内容生产系统群中的 **第二类：抓取执
 11. `specs/005-m3a-adaptive-politeness-egress-concurrency/`：M3a 自适应 Politeness 与出口并发控制。
 12. `specs/006-policy-scope-and-document-alignment/`：M4 前置策略作用域与文档 / 命名校准。
 13. `specs/007-m4-runtime-policy-pause-control/`：M4 运行时执行策略与停抓控制。
+14. `ops/`：运行期操作、批量投递、观测和排障辅助脚本 / runbook。
 
 ## 文档分层
 
