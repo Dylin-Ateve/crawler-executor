@@ -1,8 +1,23 @@
 # 交付变更记录：crawler-executor
 
-**更新日期**：2026-05-03
+**更新日期**：2026-05-04
 **文档层级**：现状层 / 交付记录
 **排序规则**：倒序记录已合并或已完成验证的 spec 与架构决策。
+
+## 2026-05-04
+
+### M4 / 007：staging 等价镜像环境验证通过
+
+- **关联 spec**：`specs/007-m4-runtime-policy-pause-control/`
+- **事实依据**：`specs/007-m4-runtime-policy-pause-control/staging-validation-report.md`。
+- **验证环境**：staging OKE / `crawler-executor` namespace；执行位置为跳板机；验证镜像为 `phx.ocir.io/axfwvgxlpupm/crawler-executor:m4-staging-20260504-001`。
+- **K8s 配置验证**：DaemonSet 已注入 `RUNTIME_POLICY_PROVIDER=file`、`RUNTIME_POLICY_FILE=/etc/crawler/runtime/runtime_policy.json`、reload interval 和 LKG age；ConfigMap `runtime_policy` 挂载为 `runtime_policy.json`；`run-m4-k8s-policy-config-audit.sh` 输出 `m4_k8s_policy_config_audit_ok`。
+- **镜像校验**：验证初期发现旧镜像缺少 `crawler.policy_provider`、`crawler.runtime_policy` 和 M4 metrics；切换到 M4 staging 镜像后继续验证。该检查已回填到 staging runbook。
+- **行为验证**：policy reload 从 `policy-staging-m4-001` 热加载到 `policy-staging-m4-002`；非法 JSON 触发 `validation_error` 并保持 last-known-good；作用域 pause、deadline expired、`max_retries=0` retry exhausted、SIGTERM shutdown 均通过。
+- **关键指标证据**：观察到 `crawler_policy_load_total{result="success"} 2.0`、`crawler_policy_load_total{result="validation_error"} 1.0`、`crawler_policy_lkg_active 1.0`、`crawler_fetch_paused_total{matched_scope_type="policy_scope_id",reason="staging_validation_pause"} 1.0`、`crawler_fetch_deadline_expired_total{matched_scope_type="default"} 1.0`、`crawler_fetch_retry_terminal_total{reason="retry_exhausted"} 1.0`。
+- **停机证据**：Pod previous 日志出现 `fetch_queue_shutdown_signal_received reason=signal:15` 与 `fetch_queue_shutdown_loop_exit ... drain_timeout=false ... in_flight_estimate=0`。
+- **恢复结果**：验证结束后恢复 staging 正常配置，确认 `CRAWLER_DEBUG_MODE=false` 且 runtime policy 回到 `policy-staging-bootstrap`。
+- **后置项**：production 复刻仍后置到 M5；带 in-flight / delayed buffer 的专项停机场景建议在 M5 production 复刻前补充。
 
 ## 2026-05-03
 

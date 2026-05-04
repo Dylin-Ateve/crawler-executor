@@ -2,7 +2,7 @@
 
 本文档定义 007 的本地验证流程。脚本名称作为目标契约记录，具体脚本由 `tasks.md` 后续任务实现。
 
-staging 复刻验证按跳板机习惯单独记录在 `staging-runbook.md`。该 runbook 只用于进入 M5 前确认 007 能力已在 staging Pod 中生效；执行完成并收集证据前，不更新现状层状态。
+staging 复刻验证按跳板机习惯单独记录在 `staging-runbook.md`；实际验证结果见 `staging-validation-report.md`。
 
 ## 前置条件
 
@@ -200,3 +200,18 @@ deploy/scripts/run-m4-graceful-shutdown-validation.sh
 | `deploy/scripts/run-m4-max-retries-validation.sh` | 通过 |
 | `deploy/scripts/run-m4-graceful-shutdown-validation.sh` | 通过 |
 | `.venv/bin/pytest` | 通过，144 passed |
+
+## staging 验证记录
+
+2026-05-04 在 staging OKE 等价镜像环境完成验证，镜像为 `phx.ocir.io/axfwvgxlpupm/crawler-executor:m4-staging-20260504-001`。
+
+| 场景 | 证据 | 结果 |
+|---|---|---|
+| K8s policy 配置审计 | `run-m4-k8s-policy-config-audit.sh` 输出 `m4_k8s_policy_config_audit_ok` | 通过 |
+| policy reload | `crawler_policy_load_total{result="success"} 2.0`，`crawler_policy_current_version{version="policy-staging-m4-002"} 1.0` | 通过 |
+| last-known-good | `crawler_policy_load_total{result="validation_error"} 1.0`，`crawler_policy_lkg_active 1.0` | 通过 |
+| 作用域 pause | `crawler_fetch_paused_total{matched_scope_type="policy_scope_id",reason="staging_validation_pause"} 1.0` | 通过 |
+| deadline expired | `crawler_fetch_deadline_expired_total{matched_scope_type="default"} 1.0` | 通过 |
+| max retries terminal | `crawler_fetch_retry_terminal_total{reason="retry_exhausted"} 1.0`，debug stream PEL `pending=0` | 通过 |
+| SIGTERM shutdown | previous container 日志出现 `fetch_queue_shutdown_signal_received` 与 `fetch_queue_shutdown_loop_exit` | 通过 |
+| 验证后恢复 | `CRAWLER_DEBUG_MODE=false`，policy 回到 `policy-staging-bootstrap` | 通过 |

@@ -2,7 +2,7 @@
 
 **输入**：`spec.md`、`plan.md`、`research.md`、`data-model.md`、`contracts/`  
 **前置条件**：P2 Redis Streams 队列消费目标节点验证通过；M3a 自适应 politeness 已完成；ADR-0014 已接受。  
-**当前状态**：本地实现与验证完成；staging / production 复刻不在本 spec 范围。
+**当前状态**：本地实现、本地验证与 staging 等价镜像环境验证完成；production 复刻后置到 M5。
 
 ## 阶段 1：规格与契约
 

@@ -62,6 +62,50 @@ deploy/scripts/run-m4-k8s-policy-config-audit.sh
 - 审计脚本输出 `m4_k8s_policy_config_audit_ok`。
 - Pod 内 `/etc/crawler/runtime/runtime_policy.json` 是合法 `schema_version=1.0` policy。
 
+## 2.1 镜像版本检查
+
+配置审计只证明 K8s 模板具备 M4 配置，不证明镜像内包含 M4 代码。继续行为验证前必须确认镜像内存在 runtime policy 模块和 M4 指标。
+
+```bash
+POD="$(kubectl -n "$M3_K8S_NAMESPACE" get pods -l "$M3_LABEL_SELECTOR" -o jsonpath='{.items[0].metadata.name}')"
+
+kubectl -n "$M3_K8S_NAMESPACE" exec -i "$POD" -- python - <<'PY'
+import importlib.util
+import inspect
+
+for name in ("crawler.policy_provider", "crawler.runtime_policy"):
+    spec = importlib.util.find_spec(name)
+    print(name, "FOUND" if spec else "MISSING", getattr(spec, "origin", ""))
+
+from crawler.spiders.fetch_queue import FetchQueueSpider
+source = inspect.getsource(FetchQueueSpider)
+print("fetch_queue_has_policy_provider", "policy_provider" in source)
+print("fetch_queue_has_deadline_expired", "deadline_expired" in source)
+
+from crawler.metrics import metrics
+for attr in ("policy_load_total", "policy_current_version", "policy_lkg_active", "fetch_deadline_expired_total", "shutdown_events_total"):
+    print(attr, hasattr(metrics, attr))
+PY
+```
+
+通过条件：
+
+- `crawler.policy_provider FOUND`
+- `crawler.runtime_policy FOUND`
+- 其余检查均为 `True`
+
+若不满足，先构建并切换 M4 镜像：
+
+```bash
+IMAGE_REF=phx.ocir.io/axfwvgxlpupm/crawler-executor:m4-staging-20260504-001 \
+PUSH_IMAGE=true \
+deploy/scripts/build-container-image.sh
+
+export IMAGE_REF=phx.ocir.io/axfwvgxlpupm/crawler-executor:m4-staging-20260504-001
+deploy/scripts/set-daemonset-image.sh
+kubectl -n "$M3_K8S_NAMESPACE" rollout status "daemonset/$M3_DAEMONSET_NAME" --timeout=5m
+```
+
 ## 3. 选择验证 Pod 与 debug stream
 
 ```bash
@@ -74,6 +118,44 @@ echo "POD=$POD"
 echo "NODE=$NODE"
 echo "DEBUG_STREAM=$DEBUG_STREAM"
 echo "DEBUG_GROUP=$DEBUG_GROUP"
+```
+
+## 3.1 投递 debug Fetch Command helper
+
+staging 镜像只保证包含应用运行所需文件，不保证包含全部 `deploy/scripts`。后续投递 debug command 时，直接使用 Pod 内 Python 和运行时 Redis 依赖写入 debug stream。
+
+```bash
+enqueue_debug_command() {
+  local job_id="$1"
+  local url="${2:-https://www.wikipedia.org/}"
+  local extra_json="${3:-{}}"
+  kubectl -n "$M3_K8S_NAMESPACE" exec -i "$POD" -- \
+    env FETCH_QUEUE_STREAM="$DEBUG_STREAM" JOB_ID="$job_id" URL="$url" EXTRA_JSON="$extra_json" python - <<'PY'
+import json
+import os
+import redis
+
+stream = os.environ["FETCH_QUEUE_STREAM"]
+job_id = os.environ["JOB_ID"]
+url = os.environ["URL"]
+extra = json.loads(os.environ["EXTRA_JSON"])
+redis_url = os.environ.get("FETCH_QUEUE_REDIS_URL") or os.environ.get("REDIS_URL")
+
+payload = {
+    "url": url,
+    "canonical_url": url.rstrip("/"),
+    "job_id": job_id,
+    "command_id": job_id,
+    "trace_id": "m4-staging",
+    "tier": "debug",
+}
+payload.update(extra)
+
+client = redis.from_url(redis_url, decode_responses=False)
+message_id = client.xadd(stream, {k: str(v) for k, v in payload.items()})
+print("m4_debug_command_enqueued", message_id.decode() if isinstance(message_id, bytes) else message_id, job_id)
+PY
+}
 ```
 
 ## 4. policy reload 验证
@@ -91,9 +173,9 @@ from pathlib import Path
 print(json.dumps({"data": {"runtime_policy": Path("/tmp/m4-policy-v1.json").read_text(encoding="utf-8")}}))
 PY
 kubectl -n "$M3_K8S_NAMESPACE" patch configmap crawler-executor-config --type merge -p "$(cat /tmp/m4-policy-patch.json)"
-sleep 15
+sleep 90
 
-FETCH_QUEUE_STREAM="$DEBUG_STREAM" deploy/scripts/m3-enqueue-debug-fetch-command.sh "$NODE" "https://www.wikipedia.org/"
+enqueue_debug_command "m4-reload:${NODE}:001"
 kubectl -n "$M3_K8S_NAMESPACE" logs "$POD" --since=3m --tail=300 | grep -E 'policy-staging-m4-001|crawler_policy|p1_crawl_attempt_published|fetch_queue'
 ```
 
@@ -110,9 +192,9 @@ from pathlib import Path
 print(json.dumps({"data": {"runtime_policy": Path("/tmp/m4-policy-v2.json").read_text(encoding="utf-8")}}))
 PY
 kubectl -n "$M3_K8S_NAMESPACE" patch configmap crawler-executor-config --type merge -p "$(cat /tmp/m4-policy-patch.json)"
-sleep 15
+sleep 90
 
-FETCH_QUEUE_STREAM="$DEBUG_STREAM" deploy/scripts/m3-enqueue-debug-fetch-command.sh "$NODE" "https://www.wikipedia.org/"
+enqueue_debug_command "m4-reload:${NODE}:002"
 kubectl -n "$M3_K8S_NAMESPACE" exec -i "$POD" -- python - <<'PY'
 import urllib.request
 print(urllib.request.urlopen("http://127.0.0.1:9410/metrics", timeout=3).read().decode())
@@ -131,9 +213,9 @@ PY
 kubectl -n "$M3_K8S_NAMESPACE" patch configmap crawler-executor-config \
   --type merge \
   -p '{"data":{"runtime_policy":"{bad-json"}}'
-sleep 15
+sleep 90
 
-FETCH_QUEUE_STREAM="$DEBUG_STREAM" deploy/scripts/m3-enqueue-debug-fetch-command.sh "$NODE" "https://www.wikipedia.org/"
+enqueue_debug_command "m4-lkg:${NODE}:001"
 kubectl -n "$M3_K8S_NAMESPACE" exec -i "$POD" -- python - <<'PY'
 import urllib.request
 metrics = urllib.request.urlopen("http://127.0.0.1:9410/metrics", timeout=3).read().decode()
@@ -153,7 +235,7 @@ PY
 
 ```bash
 kubectl -n "$M3_K8S_NAMESPACE" patch configmap crawler-executor-config --type merge -p "$(cat /tmp/m4-policy-patch.json)"
-sleep 15
+sleep 90
 ```
 
 ## 6. pause 与 deadline 验证
@@ -170,18 +252,14 @@ from pathlib import Path
 print(json.dumps({"data": {"runtime_policy": Path("/tmp/m4-policy-paused.json").read_text(encoding="utf-8")}}))
 PY
 kubectl -n "$M3_K8S_NAMESPACE" patch configmap crawler-executor-config --type merge -p "$(cat /tmp/m4-policy-patch.json)"
-sleep 15
+sleep 90
 ```
 
 投递 paused 和 deadline expired 命令：
 
 ```bash
-cat >/tmp/m4-commands.jsonl <<EOF
-{"url":"https://www.wikipedia.org/","canonical_url":"https://www.wikipedia.org","job_id":"m4-staging-paused","command_id":"m4-staging-paused-1","trace_id":"m4-staging","policy_scope_id":"m4-staging-paused","tier":"debug"}
-{"url":"https://www.wikipedia.org/","canonical_url":"https://www.wikipedia.org","job_id":"m4-staging-deadline","command_id":"m4-staging-deadline-1","trace_id":"m4-staging","deadline_at":"2026-01-01T00:00:00Z","tier":"debug"}
-EOF
-
-FETCH_QUEUE_STREAM="$DEBUG_STREAM" deploy/scripts/p2-enqueue-fetch-commands.sh /tmp/m4-commands.jsonl
+enqueue_debug_command "m4-staging-paused" "https://www.wikipedia.org/" '{"policy_scope_id":"m4-staging-paused"}'
+enqueue_debug_command "m4-staging-deadline" "https://www.wikipedia.org/" '{"deadline_at":"2026-01-01T00:00:00Z"}'
 sleep 20
 kubectl -n "$M3_K8S_NAMESPACE" logs "$POD" --since=5m --tail=500 | grep -E 'paused|deadline_expired|p1_crawl_attempt_published'
 ```
@@ -207,11 +285,7 @@ PY
 投递 `max_retries=0` 的 fetch 层失败命令：
 
 ```bash
-cat >/tmp/m4-retry-command.jsonl <<'EOF'
-{"url":"http://127.0.0.1:1/","canonical_url":"http://127.0.0.1:1","job_id":"m4-staging-retry-zero","command_id":"m4-staging-retry-zero-1","trace_id":"m4-staging","max_retries":"0","tier":"debug"}
-EOF
-
-FETCH_QUEUE_STREAM="$DEBUG_STREAM" deploy/scripts/p2-enqueue-fetch-commands.sh /tmp/m4-retry-command.jsonl
+enqueue_debug_command "m4-staging-retry-zero" "http://127.0.0.1:1/" '{"max_retries":"0"}'
 sleep 20
 kubectl -n "$M3_K8S_NAMESPACE" logs "$POD" --since=5m --tail=500 | grep -E 'retry_exhausted|crawler_fetch_retry_terminal|p1_crawl_attempt_published'
 ```
@@ -253,6 +327,7 @@ kubectl -n "$M3_K8S_NAMESPACE" apply -f /tmp/crawler-executor-config.restore-sta
 export IMAGE_REF="$(kubectl -n "$M3_K8S_NAMESPACE" get daemonset "$M3_DAEMONSET_NAME" -o jsonpath='{.spec.template.spec.containers[0].image}')"
 deploy/scripts/render-k8s-daemonset-from-env.sh >/tmp/crawler-executor-daemonset.restore-staging.yaml
 kubectl -n "$M3_K8S_NAMESPACE" apply -f /tmp/crawler-executor-daemonset.restore-staging.yaml
+kubectl -n "$M3_K8S_NAMESPACE" rollout restart "daemonset/$M3_DAEMONSET_NAME"
 kubectl -n "$M3_K8S_NAMESPACE" rollout status "daemonset/$M3_DAEMONSET_NAME" --timeout=5m
 ```
 

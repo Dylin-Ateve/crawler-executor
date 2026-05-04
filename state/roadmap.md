@@ -1,6 +1,6 @@
 # 演进路线图：crawler-executor
 
-**更新日期**：2026-05-03
+**更新日期**：2026-05-04
 **文档层级**：现状层 / 路线图
 **组织方式**：按能力里程碑组织，不按固定时间承诺。
 
@@ -49,12 +49,13 @@
 ### M4：运行时执行策略与停抓控制
 
 - **目标**：在不改变 executor 只执行抓取指令的边界下，补齐 effective policy 契约、本地文件 / ConfigMap provider、运行时热加载、last-known-good、全局 / 作用域 pause、`deadline_at` 与 `max_retries` 生效、严格优雅停机收口和 M4 指标。
-- **状态**：本地实现与验证完成；staging / production 复刻不在本 spec 范围。
+- **状态**：本地实现、本地验证与 staging 等价镜像环境验证完成；production 复刻后置到 M5。
 - **对应 spec**：`specs/007-m4-runtime-policy-pause-control/`
 - **前置校准**：`specs/006-policy-scope-and-document-alignment/` 已通过 ADR-0014 移除旧 Heritrix 分组概念和外置 scheduler 旧目标，并补齐 `crawl_attempt` 执行上下文透传。
 - **策略边界**：M4 第一版只消费已经解析好的 effective policy；策略优先级、业务策略合并、Host/Site 成员关系解析、URL 选择、业务优先级和重抓窗口仍归控制平面或第六类，不在 executor 内实现。
 - **最小策略源**：在上游控制平面尚未建成前，使用本地文件 / ConfigMap provider 承载与未来控制平面同形态的 effective policy；该 provider 不是空实现，必须能验证热加载、pause、last-known-good 和作用域覆盖。
 - **验收信号**：策略文件变更不需要重启 worker；策略源异常或策略校验失败时保留 last-known-good 并暴露指标；全局 / 作用域 pause 在约定时间内生效；过期 `deadline_at` 任务在发起请求前跳过并发布 terminal `crawl_attempt`；Fetch Command `max_retries` 覆盖默认重试 / 投递上限；SIGTERM 后立即停止 `XREADGROUP` / `XAUTOCLAIM`，未完成消息保留 PEL；不得引入 URL 调度、策略分组成员管理或外置 scheduler 语义。
+- **staging 证据**：2026-05-04 使用镜像 `phx.ocir.io/axfwvgxlpupm/crawler-executor:m4-staging-20260504-001` 完成验证；观察到 `crawler_policy_load_total{result="success"} 2.0`、`crawler_policy_lkg_active 1.0`、`crawler_fetch_paused_total{reason="staging_validation_pause"} 1.0`、`crawler_fetch_deadline_expired_total 1.0`、`crawler_fetch_retry_terminal_total{reason="retry_exhausted"} 1.0`，SIGTERM previous 日志出现 `fetch_queue_shutdown_signal_received` 与 `fetch_queue_shutdown_loop_exit`；验证后恢复 `CRAWLER_DEBUG_MODE=false` 与 `policy-staging-bootstrap`。
 - **明确不做**：不做 production 复刻验证；不做 Kafka outbox / 故障补偿；不做 poison message / DLQ；不做完整 Grafana / 告警落地；不做 JS 渲染或浏览器抓取。
 
 ### M5：生产就绪与可靠性补偿
@@ -99,7 +100,7 @@
 | D-DEBT-3 | Politeness 仍以 env / ConfigMap 静态参数为主 | 005 已按 ADR-0012 补齐自适应防封闭环并通过 staging 验证 | 控制平面策略下发链路可用 |
 | D-DEBT-4 | `content_sha256` 只覆盖 HTML 快照场景 | 当前仅在 `storage_result=stored` 时计算 | 上层架构要求所有响应统一 Raw 指纹 |
 | D-DEBT-5 | Redis 只读边界审计仍可加宽 | 现有脚本已覆盖 key diff 与目标 stream `XLEN` 前后不变 | 进入 M5a 队列治理或生产审计规则收口 |
-| D-DEBT-6 | 严格优雅停机语义未收口 | 当前满足 PEL 不清空与可恢复底线，但 SIGTERM 后仍可能继续 claim / 重复处理 | M4 严格优雅停机任务 |
+| D-DEBT-6 | 严格优雅停机语义曾未收口 | 007 已补更早 SIGTERM / SIGINT shutdown flag 入口，并通过 staging shutdown 日志验证；带 in-flight / delayed buffer 的专项停机场景仍建议在 M5 production 复刻前补充 | M5 production 复刻前专项验证 |
 | D-DEP-1 | 短窗口执行安全状态与第五类长期画像事实边界待契约化 | 当前以本系统本地短窗口判断为准 | 第五类发布 Host / IP / ASN 画像事实与执行缓存切分契约 |
 
 ## 3. 未完成关键生产能力
@@ -130,9 +131,9 @@
 
 staging 已作为 production 功能验证等价镜像环境完成 004 / 005 的部署基础、005 功能验证，以及 004 的干净 Fetch Command 消费、`crawl_attempt` 发布后 `XACK`、Object Storage 内容持久化、debug stream、pause flag、手动删除 / RollingUpdate 下 PEL reclaim。004 可在 staging 口径下关闭；production 复刻验证和正式部署后置到 M5，在明确进入生产发布前再按同一操作流程执行。
 
-007 已完成 M4 本地实现与验证。下一步建议进入 M5 前的评审：确认是否先在 staging 等价环境复跑 M4 policy / pause / deadline / retry / shutdown 验证，再决定 production 复刻窗口。
+007 已完成 M4 本地实现、本地验证与 staging 等价镜像环境验证。下一步建议进入 M5 前的评审：基于 2026-05-04 staging 证据决定 production 复刻窗口，并补充带 in-flight / delayed buffer 的专项停机场景。
 
-M3 第一版曾按 T015c 过渡运行假设设计：低频手动滚动、任务幂等、允许少量重复抓取、PEL 可恢复。007 已补更早 shutdown flag 入口，使后续 production 复刻前具备更清晰的滚动更新语义；仍建议在 staging 复测 SIGTERM / PEL 行为后再进入 production。
+M3 第一版曾按 T015c 过渡运行假设设计：低频手动滚动、任务幂等、允许少量重复抓取、PEL 可恢复。007 已补更早 shutdown flag 入口，并已在 staging 复测 SIGTERM 入口和退出总结；production 前仍建议补 in-flight / delayed buffer 留 PEL 专项验证。
 
 D-DEBT-5（只读边界 audit pattern 加宽）按现状层债务跟进，不阻塞 M3 启动。
 
