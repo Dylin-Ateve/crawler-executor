@@ -366,6 +366,26 @@ spec:
                 configMapKeyRef:
                   name: crawler-executor-config
                   key: timeout_weight
+            - name: RUNTIME_POLICY_PROVIDER
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: runtime_policy_provider
+            - name: RUNTIME_POLICY_FILE
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: runtime_policy_file
+            - name: RUNTIME_POLICY_RELOAD_INTERVAL_SECONDS
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: runtime_policy_reload_interval_seconds
+            - name: RUNTIME_POLICY_LKG_MAX_AGE_SECONDS
+              valueFrom:
+                configMapKeyRef:
+                  name: crawler-executor-config
+                  key: runtime_policy_lkg_max_age_seconds
             - name: CHALLENGE_BODY_PATTERNS
               valueFrom:
                 configMapKeyRef:
@@ -575,3 +595,5 @@ spec:
             items:
               - key: crawler_paused
                 path: crawler_paused
+              - key: runtime_policy
+                path: runtime_policy.json

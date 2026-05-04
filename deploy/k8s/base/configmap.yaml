@@ -60,6 +60,11 @@ data:
   timeout_weight: "1"
   challenge_body_patterns: ""
   anti_bot_200_patterns: ""
+  runtime_policy_provider: file
+  runtime_policy_file: /etc/crawler/runtime/runtime_policy.json
+  runtime_policy_reload_interval_seconds: "5"
+  runtime_policy_lkg_max_age_seconds: "3600"
+  runtime_policy: '{"schema_version":"1.0","version":"policy-bootstrap","generated_at":"2026-05-03T10:00:00Z","default_policy":{"enabled":true,"paused":false,"egress_selection_strategy":"STICKY_POOL","sticky_pool_size":4,"host_ip_min_delay_ms":2000,"host_ip_jitter_ms":500,"download_timeout_seconds":30,"max_retries":2,"max_local_delay_seconds":300}}'
   execution_state_redis_url: ""
   execution_state_redis_prefix: crawler:exec:safety
   execution_state_max_ttl_seconds: "86400"

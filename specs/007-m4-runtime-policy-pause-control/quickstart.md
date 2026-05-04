@@ -2,6 +2,8 @@
 
 本文档定义 007 的本地验证流程。脚本名称作为目标契约记录，具体脚本由 `tasks.md` 后续任务实现。
 
+staging 复刻验证按跳板机习惯单独记录在 `staging-runbook.md`。该 runbook 只用于进入 M5 前确认 007 能力已在 staging Pod 中生效；执行完成并收集证据前，不更新现状层状态。
+
 ## 前置条件
 
 - P2 Redis Streams consumer group 验证已通过。
@@ -16,7 +18,6 @@
 export RUNTIME_POLICY_PROVIDER=file
 export RUNTIME_POLICY_FILE=/tmp/crawler-effective-policy.json
 export RUNTIME_POLICY_RELOAD_INTERVAL_SECONDS=5
-export RUNTIME_POLICY_FAIL_OPEN_WITH_BOOTSTRAP=true
 export RUNTIME_POLICY_LKG_MAX_AGE_SECONDS=3600
 
 export FETCH_QUEUE_BLOCK_MS=1000
