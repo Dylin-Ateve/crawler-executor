@@ -6,6 +6,14 @@
 
 ## 2026-05-04
 
+### M5 / 008：生产就绪与可靠性补偿规格启动
+
+- **关联 spec**：`specs/008-m5-production-readiness-reliability/`
+- **新增规划结论**：M5 第一阶段优先 production 复刻验证、in-flight / delayed buffer 专项停机验证、最小 production smoke、发布 / 回滚 SOP 和 Kafka outbox / 故障补偿设计。
+- **范围边界**：不把完整 Grafana / 告警、poison message / DLQ、队列反压治理、24 小时压测、JS 渲染或 URL 调度混入 008 第一阶段；这些继续后置到 M5a 或后续 milestone。
+- **目录治理**：面向跳板机和运行期操作的辅助材料进入 `ops/`；`deploy/` 保持镜像构建、K8s manifest 渲染和发布配置职责。
+- **后续任务**：补 production 复刻 runbook / config audit / smoke 脚本，并优先落地 in-flight 与 delayed buffer 两个 SIGTERM 专项验证脚本。
+
 ### M4 / 007：staging 等价镜像环境验证通过
 
 - **关联 spec**：`specs/007-m4-runtime-policy-pause-control/`

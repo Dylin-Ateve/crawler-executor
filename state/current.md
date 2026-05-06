@@ -3,7 +3,7 @@
 **更新日期**：2026-05-04
 **对应 commit**：待下次合并后回填
 **对照终态**：`.specify/memory/architecture.md`
-**当前阶段**：P0 核心链路已验证；P1 `crawl_attempt` producer 已通过目标节点 T055 验证。M2 `specs/003-p2-readonly-scheduler-queue/` 已完成目标节点验证。M3 `specs/004-p3-k8s-daemonset-hostnetwork/` 已完成 staging 等价镜像环境验证。M3a `specs/005-m3a-adaptive-politeness-egress-concurrency/` 已完成本地实现、staging OKE 等价镜像环境验证和真实运行 smoke。006 已完成 M4 前置概念校准。007 M4“运行时执行策略与停抓控制”已完成本地与 staging 验证：effective policy 本地文件 / ConfigMap provider、热加载、last-known-good、作用域 pause、`deadline_at` / `max_retries` 生效、严格优雅停机入口和 M4 指标均已落地；production 复刻验证、Kafka outbox、DLQ 和完整生产观测后置到后续 milestone。
+**当前阶段**：P0 核心链路已验证；P1 `crawl_attempt` producer 已通过目标节点 T055 验证。M2 `specs/003-p2-readonly-scheduler-queue/` 已完成目标节点验证。M3 `specs/004-p3-k8s-daemonset-hostnetwork/` 已完成 staging 等价镜像环境验证。M3a `specs/005-m3a-adaptive-politeness-egress-concurrency/` 已完成本地实现、staging OKE 等价镜像环境验证和真实运行 smoke。006 已完成 M4 前置概念校准。007 M4“运行时执行策略与停抓控制”已完成本地与 staging 验证：effective policy 本地文件 / ConfigMap provider、热加载、last-known-good、作用域 pause、`deadline_at` / `max_retries` 生效、严格优雅停机入口和 M4 指标均已落地。008 M5“生产就绪与可靠性补偿”已启动规格，第一阶段聚焦 production 复刻验证、in-flight / delayed buffer 专项停机验证、最小 production smoke、发布 / 回滚 SOP 和 Kafka outbox / 故障补偿设计；DLQ、完整生产观测和队列反压治理后置到 M5a。
 
 ## 1. 当前架构快照
 
@@ -30,6 +30,7 @@ Scrapy worker
 - 生产防封和吞吐模型已完成 005 本地与 staging 验证：生产默认切换到 `STICKY_POOL`，支持 host-aware sticky-pool、per-(host, ip) pacer、IP cooldown、host slowdown、软封禁反馈、本地有界 delayed buffer 和 Redis TTL 执行态；production 仍需按 staging 同一流程复刻验证。
 - 尚未交付第五类消费端事实投影。
 - 运行时 effective policy 热加载、last-known-good、作用域 pause、`deadline_at` / `max_retries` 生效和严格优雅停机入口已在 007 本地实现，并于 2026-05-04 通过 staging OKE 等价镜像环境验证；production 环境验证未执行。
+- 008 已启动 M5 production readiness 规格；下一批任务是补 production 复刻 runbook / audit / smoke，以及带 in-flight / delayed buffer 的 SIGTERM 专项验证脚本。
 - 控制平面策略作用域已按 ADR-0014 收敛为 `tier` / `site_id` / `host_id` / `politeness_key` / `policy_scope_id`，不再使用 Heritrix 风格 `HostGroup` 作为 executor 概念。
 
 ## 1.1 准生产能力小结

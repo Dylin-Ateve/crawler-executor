@@ -61,8 +61,8 @@
 ### M5：生产就绪与可靠性补偿
 
 - **目标**：在正式 production 部署前完成 staging 到 production 的等价复刻验证，并补齐长期稳定抓取所需的可靠性与生产治理能力。
-- **状态**：后置。
-- **对应 spec**：待规划。
+- **状态**：规格启动；第一阶段聚焦 production 复刻、专项停机验证、最小 production smoke 和 Kafka outbox / 故障补偿设计。
+- **对应 spec**：`specs/008-m5-production-readiness-reliability/`
 - **能力范围**：
   - production 复刻 staging 验证：真实多出口 IP、sticky-pool、pacer、soft-ban feedback、delayed buffer、Redis 写入边界、Kafka publish smoke、Object Storage 权限、ConfigMap / Secret 审核、DaemonSet dry-run / apply、PEL 清空和指标抓取。
   - Kafka outbox / 故障补偿：对象已写入但 Kafka 长时间不可用时的本地持久缓冲、重放、高水位告警和补偿流程。
@@ -131,7 +131,7 @@
 
 staging 已作为 production 功能验证等价镜像环境完成 004 / 005 的部署基础、005 功能验证，以及 004 的干净 Fetch Command 消费、`crawl_attempt` 发布后 `XACK`、Object Storage 内容持久化、debug stream、pause flag、手动删除 / RollingUpdate 下 PEL reclaim。004 可在 staging 口径下关闭；production 复刻验证和正式部署后置到 M5，在明确进入生产发布前再按同一操作流程执行。
 
-007 已完成 M4 本地实现、本地验证与 staging 等价镜像环境验证。下一步建议进入 M5 前的评审：基于 2026-05-04 staging 证据决定 production 复刻窗口，并补充带 in-flight / delayed buffer 的专项停机场景。
+007 已完成 M4 本地实现、本地验证与 staging 等价镜像环境验证。008 已启动 M5 规格，下一步建议优先落地 production 复刻 runbook / audit / smoke，并在 staging 先补带 in-flight / delayed buffer 的专项停机场景。
 
 M3 第一版曾按 T015c 过渡运行假设设计：低频手动滚动、任务幂等、允许少量重复抓取、PEL 可恢复。007 已补更早 shutdown flag 入口，并已在 staging 复测 SIGTERM 入口和退出总结；production 前仍建议补 in-flight / delayed buffer 留 PEL 专项验证。
 
